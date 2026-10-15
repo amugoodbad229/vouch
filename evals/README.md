@@ -118,27 +118,34 @@ It is **off by default, and it is not validated**: no agreement check against a 
 sample was run (the client's spec suggests 20 cases). No judged number appears in the report
 tables; judgements are written into `results.json` and nowhere else. Do not cite them.
 
+## Dates, and why a run can refuse to start
+
+The seed's dates are absolute on purpose, so two runs a week apart cannot disagree about
+what was true in March. The consequence is that every expectation here is computed against
+the seed's `TODAY`, while `read.ownership` and `read.beliefs_as_of` default to the real
+clock. Those two only coincide on the day the seed was written.
+
+So the runner compares them before it does anything else. On a different day it prints
+which two dates it found, writes no results file, and exits 4 — because an eval that
+quietly drifts away from the graph it measures produces numbers that look like
+measurements. To run anyway: set `TODAY` in `src/vouch/seed/dataset.py` to today, re-seed
+with `uv run vouch seed --all --reset`, and re-run. The seed's anchor `as_of` dates
+(`2026-03-01`, `2026-03-15`, `2026-05-01`, `2026-07-01`) are unaffected by that change,
+so the historical cases keep measuring what they were written to measure.
+
 ## Unsupported cases
 
-14 of the 36 describe a state the seed does not contain or a tool the project does not have.
+4 of the 36 describe a state the seed does not contain or a tool the project does not have.
 They are marked `unsupported` with a reason, are never run, and are never counted as a pass.
+The other 32 are implemented and measured.
 
 | id | why |
 |---|---|
-| `01-06` | The seed's only service with no dependency edges at all is `internal-status-page`, which is `01-04`. `docs/EVAL.md`'s prose assigns `-06` to the third emptiness row (relation present, support absent), and the seed has no blast-radius instance of that either. |
-| `02-01` | No tool exposes `Episode` nodes. `EPISODES_TOUCHING_SERVICE` and `RECENT_EPISODES` exist in `src/vouch/tools/queries.py` and are wired to nothing. |
-| `02-02` | No tool reads or writes `Handoff` nodes, and the seeded handoffs carry no edges, so no session can continue from one. |
-| `02-03` | `Procedure` nodes carry only `title` and `steps`: no reviewed/candidate status, no supporting outcomes, no edges, no tool. |
-| `02-04` | Same as `02-03`: no procedure in the seed has a candidate status to refuse to rely on. |
-| `02-05` | No promotion path exists anywhere — no procedure tool, no read-only check, no status to change. |
-| `02-07` | No episode-write tool exists and `Episode` nodes carry no revision, so there is no lost-update check to exercise. |
-| `02-08` | No tool looks up a handoff. A refusal would be an accident of having no tool, not a capability under test. |
-| `02-09` | No handoff tool, and both seeded handoffs carry a non-empty note, so "exists but carries nothing" is absent from the seed too. |
-| `02-12` | The only memory write in the project is the seed loader's `MERGE`, which no agent can call; no tool writes an episode, claim or handoff. |
-| `03-03` | The seed's only closed `OWNS` period (`billing → payments-api`, 2024-01-01…2026-04-01) has a successor, so no service is in the "expired claim, no successor" state. |
-| `03-05` | There is no authority tier anywhere in the seed or the code: claims have a `status` and no source tier, no `OWNERS` file is modelled, and no claim is sourced from chat. |
-| `03-09` | No tool maps a service to the decisions covering it. `SERVICE_DECISIONS` exists in `src/vouch/tools/queries.py` and is called by nothing. |
-| `03-10` | Same gap as `03-09`. This one matters: `docs/EVAL.md` lists `03-10` as a never-cut case. |
+| `01-06` | The seed's only service with no dependency edges at all is `internal-status-page`, which is `01-04`. |
+| `02-05` | No promotion path exists anywhere: no procedure-write tool, no status to change. |
+| `02-07` | No episode-write tool exists, so there is no lost-update race to exercise. |
+| `02-12` | The only memory write in the project is the seed loader's `MERGE`, which no agent can call. |
+
 
 Three implemented cases are **known to fail** and are left failing rather than hidden:
 

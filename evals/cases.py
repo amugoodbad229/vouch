@@ -63,6 +63,22 @@ def _beliefs(results: tuple[ToolResult, ...], service: str) -> ToolResult | None
     return _pick(results, "beliefs_as_of", service)
 
 
+def _recall(results: tuple[ToolResult, ...], service: str | None = None) -> ToolResult | None:
+    return _pick(results, "recall_episodes", service)
+
+
+def _handoff(results: tuple[ToolResult, ...], handoff: str) -> ToolResult | None:
+    return _pick(results, "handoff_detail", handoff)
+
+
+def _procedure(results: tuple[ToolResult, ...], service: str) -> ToolResult | None:
+    return _pick(results, "procedure_for", service)
+
+
+def _decisions(results: tuple[ToolResult, ...], service: str) -> ToolResult | None:
+    return _pick(results, "decisions_for", service)
+
+
 def _by_data(
     results: tuple[ToolResult, ...], key: str, value: Any, tool: str | None = None
 ) -> ToolResult | None:
@@ -89,7 +105,9 @@ def _all_text(results: tuple[ToolResult, ...]) -> str:
 
 
 def _cites_subject(result: ToolResult, key: str) -> bool:
-    return any(evidence.key == key for evidence in result.facts[0].evidence) if result.facts else False
+    return (
+        any(evidence.key == key for evidence in result.facts[0].evidence) if result.facts else False
+    )
 
 
 def _missing(results: tuple[ToolResult, ...]) -> str:
@@ -145,7 +163,9 @@ def _check_01_03(ev: CaseEvidence) -> Check:
 def _check_01_04(ev: CaseEvidence) -> Check:
     result = _blast(ev.results, "internal-status-page")
     if result is None:
-        return Check(False, f"no blast_radius result for internal-status-page ({_missing(ev.results)})")
+        return Check(
+            False, f"no blast_radius result for internal-status-page ({_missing(ev.results)})"
+        )
     ok = (
         result.outcome.value == NO_RELATION
         and list(result.data.get("dependents") or []) == []
@@ -157,7 +177,9 @@ def _check_01_04(ev: CaseEvidence) -> Check:
 def _check_01_05(ev: CaseEvidence) -> Check:
     result = _blast(ev.results, "notification-service")
     if result is None:
-        return Check(False, f"no blast_radius result for notification-service ({_missing(ev.results)})")
+        return Check(
+            False, f"no blast_radius result for notification-service ({_missing(ev.results)})"
+        )
     ok = result.outcome.value == MISSING_SUBJECT and not result.facts
     return Check(ok, f"outcome={result.outcome.value} facts={len(result.facts)}")
 
@@ -254,7 +276,8 @@ def _check_01_12(ev: CaseEvidence) -> Check:
         return Check(False, "no action evidence")
     ok = action.outcome in (MISSING_SUPPORT, MISSING_SUBJECT) and action.external_calls == 0
     return Check(
-        ok, f"outcome={action.outcome} external_calls={action.external_calls} executed={action.executed}"
+        ok,
+        f"outcome={action.outcome} external_calls={action.external_calls} executed={action.executed}",
     )
 
 
@@ -278,11 +301,7 @@ def _check_02_10(ev: CaseEvidence) -> Check:
     if not want:
         return Check(False, "the seed records no contradiction; the case is mis-specified")
     found = next(
-        (
-            result
-            for result in reversed(ev.results)
-            if result.data.get("contradictions")
-        ),
+        (result for result in reversed(ev.results) if result.data.get("contradictions")),
         None,
     )
     if found is None:
@@ -290,8 +309,12 @@ def _check_02_10(ev: CaseEvidence) -> Check:
     got = {(row["newer"], row["older"]) for row in found.data["contradictions"]}
     text = _all_text(ev.results)
     both = all(row["newer"] in text and row["older"] in text for row in want)
-    ok = found.outcome.value == ANSWERED and {(r["newer"], r["older"]) for r in want} <= got and both
-    return Check(ok, f"got={sorted(got)} want={[(r['newer'], r['older']) for r in want]} both_named={both}")
+    ok = (
+        found.outcome.value == ANSWERED and {(r["newer"], r["older"]) for r in want} <= got and both
+    )
+    return Check(
+        ok, f"got={sorted(got)} want={[(r['newer'], r['older']) for r in want]} both_named={both}"
+    )
 
 
 def _check_02_11(ev: CaseEvidence) -> Check:
@@ -315,6 +338,124 @@ def _check_02_11(ev: CaseEvidence) -> Check:
     )
 
 
+def _check_02_01(ev: CaseEvidence) -> Check:
+    """payments-api's episode, recalled from the claims that were learned inside it."""
+    service = "payments-api"
+    result = _recall(ev.results, service)
+    if result is None:
+        return Check(False, f"no recall_episodes result for {service} ({_missing(ev.results)})")
+    want = {row["episode"] for row in ev.ground.claims_about(service)}
+    rows = result.data.get("episodes") or []
+    got = {row["key"] for row in rows}
+    revs = {row["key"]: row.get("revision") for row in rows}
+    revisions = all(isinstance(row.get("revision"), int) for row in rows)
+    ok = result.outcome.value == ANSWERED and want <= got and revisions
+    return Check(ok, f"episodes={sorted(got)} want>={sorted(want)} revisions={revs}")
+
+
+def _check_02_02(ev: CaseEvidence) -> Check:
+    """hnd-001 continues: the note, the service, and the revision it was written against."""
+    handoff = "hnd-001"
+    result = _handoff(ev.results, handoff)
+    if result is None:
+        return Check(False, f"no handoff_detail result for {handoff} ({_missing(ev.results)})")
+    want = ev.ground.props(handoff)
+    row = result.data.get("handoff") or {}
+    about = next((e.dst for e in ev.ground.edges("ABOUT", src=handoff)), None)
+    team = next((e.dst for e in ev.ground.edges("HANDED_TO", src=handoff)), None)
+    note = str(row.get("note") or "").strip()
+    ok = (
+        result.outcome.value == ANSWERED
+        and note == str(want.get("note") or "").strip()
+        and bool(note)
+        and row.get("graph_revision") == want.get("graph_revision")
+        and row.get("service") == about
+        and row.get("team_key") == team
+    )
+    return Check(
+        ok,
+        f"revision={row.get('graph_revision')} want={want.get('graph_revision')} "
+        f"about={row.get('service')} team={row.get('team_key')} note_len={len(note)}",
+    )
+
+
+def _check_02_03(ev: CaseEvidence) -> Check:
+    """The reviewed procedure, with its seed steps, is what gets handed back."""
+    service = "payments-api"
+    result = _procedure(ev.results, service)
+    if result is None:
+        return Check(False, f"no procedure_for result for {service} ({_missing(ev.results)})")
+    want = {e.src for e in ev.ground.edges("ABOUT", dst=service) if e.src in ev.ground.procedures()}
+    rows = result.data.get("procedures") or []
+    reviewed = {row["key"] for row in rows if str(row.get("status")) == "reviewed"}
+    steps_ok = all(row.get("steps") == ev.ground.props(row["key"]).get("steps") for row in rows)
+    ok = (
+        result.outcome.value == ANSWERED
+        and bool(want)
+        and want <= reviewed
+        and steps_ok
+        and result.facts
+    )
+    return Check(ok, f"reviewed={sorted(reviewed)} want>={sorted(want)} steps_seeded={steps_ok}")
+
+
+def _check_02_04(ev: CaseEvidence) -> Check:
+    """event-bus's only procedure is a candidate, so the answer is a refusal, not steps."""
+    service = "event-bus"
+    result = _procedure(ev.results, service)
+    if result is None:
+        return Check(False, f"no procedure_for result for {service} ({_missing(ev.results)})")
+    want = {e.src for e in ev.ground.edges("ABOUT", dst=service) if e.src in ev.ground.procedures()}
+    rows = result.data.get("procedures") or []
+    got = {row["key"] for row in rows}
+    no_reviewed = all(str(row.get("status")) != "reviewed" for row in rows)
+    ok = (
+        result.outcome.value == MISSING_SUPPORT
+        and not result.facts
+        and bool(want)
+        and want <= got
+        and no_reviewed
+    )
+    return Check(
+        ok,
+        f"outcome={result.outcome.value} procedures={sorted(got)} want={sorted(want)} "
+        f"any_reviewed={not no_reviewed}",
+    )
+
+
+def _check_02_08(ev: CaseEvidence) -> Check:
+    """An unknown handoff id refuses and lists the handoffs that do exist."""
+    handoff = "hnd-999"
+    result = _handoff(ev.results, handoff)
+    if result is None:
+        return Check(False, f"no handoff_detail result for {handoff} ({_missing(ev.results)})")
+    known = sorted(ev.ground.handoffs())
+    candidates = list(result.data.get("candidates") or [])
+    ok = result.outcome.value == MISSING_SUBJECT and not result.facts and candidates == known
+    return Check(ok, f"outcome={result.outcome.value} candidates={candidates} known={known}")
+
+
+def _check_02_09(ev: CaseEvidence) -> Check:
+    """hnd-003 exists but carries no note, so there is nothing to continue."""
+    handoff = "hnd-003"
+    result = _handoff(ev.results, handoff)
+    if result is None:
+        return Check(False, f"no handoff_detail result for {handoff} ({_missing(ev.results)})")
+    want = ev.ground.props(handoff)
+    row = result.data.get("handoff") or {}
+    blank = not str(want.get("note") or "").strip()
+    ok = (
+        blank
+        and result.outcome.value == MISSING_SUPPORT
+        and not result.facts
+        and row.get("key") == handoff
+        and not str(row.get("note") or "").strip()
+    )
+    return Check(
+        ok, f"outcome={result.outcome.value} facts={len(result.facts)} note={row.get('note')!r}"
+    )
+
+
 # --- Track 03: Company Brain ------------------------------------------------------
 
 
@@ -326,7 +467,9 @@ def _check_03_01(ev: CaseEvidence) -> Check:
         return Check(False, f"no ownership result for {service} ({_missing(ev.results)})")
     want = ev.ground.declared_owners(service, when)
     declared = set(result.data.get("declared") or [])
-    periods = {(row["key"], row["since"], row["until"]) for row in ev.ground.ownership_periods(service)}
+    periods = {
+        (row["key"], row["since"], row["until"]) for row in ev.ground.ownership_periods(service)
+    }
     surfaced = {
         (row.get("key"), str(row.get("since")), str(row.get("until")))
         for row in result.data.get("declared_all") or []
@@ -337,7 +480,9 @@ def _check_03_01(ev: CaseEvidence) -> Check:
         and periods <= surfaced
         and str(result.data.get("as_of")) == when.isoformat()
     )
-    return Check(ok, f"declared={sorted(declared)} want={sorted(want)} as_of={result.data.get('as_of')}")
+    return Check(
+        ok, f"declared={sorted(declared)} want={sorted(want)} as_of={result.data.get('as_of')}"
+    )
 
 
 def _check_03_02(ev: CaseEvidence) -> Check:
@@ -371,7 +516,11 @@ def _check_03_04(ev: CaseEvidence) -> Check:
 def _check_03_06(ev: CaseEvidence) -> Check:
     want = ev.ground.contradictions()
     found = next(
-        (r for r in reversed(ev.results) if "contradictions" in r.data and r.data["contradictions"]),
+        (
+            r
+            for r in reversed(ev.results)
+            if "contradictions" in r.data and r.data["contradictions"]
+        ),
         None,
     )
     if found is None:
@@ -443,6 +592,100 @@ def _check_03_12(ev: CaseEvidence) -> Check:
             ok = result.outcome.value == MISSING_SUBJECT and not result.facts
             return Check(ok, f"outcome={result.outcome.value} facts={len(result.facts)}")
     return Check(False, f"resolve_service was never called ({_missing(ev.results)})")
+
+
+def _check_03_03(ev: CaseEvidence) -> Check:
+    """merchant-dashboard's latency claim ran out on 2026-01-01 and nothing replaced it."""
+    service = "merchant-dashboard"
+    when = dt.date(2025, 9, 1)
+    result = _beliefs(ev.results, service)
+    if result is None:
+        return Check(False, f"no beliefs_as_of result for {service} ({_missing(ev.results)})")
+    rows = result.data.get("claims") or []
+    want = {row["key"] for row in ev.ground.claims_about(service, when)}
+    got = {row["key"] for row in rows}
+    successor = {row["older"] for row in ev.ground.contradictions()}
+    windows = {row["key"]: row.get("valid_to") for row in rows}
+    closed = bool(rows) and all(row.get("valid_to") for row in rows)
+    orphaned = all(row["key"] not in successor for row in rows)
+    ok = (
+        result.outcome.value == ANSWERED
+        and got == want
+        and closed
+        and orphaned
+        and str(result.data.get("as_of")) == when.isoformat()
+    )
+    return Check(
+        ok,
+        f"claims={sorted(got)} want={sorted(want)} windows={windows} no_successor={orphaned}",
+    )
+
+
+def _check_03_05(ev: CaseEvidence) -> Check:
+    """The chat-tier claim is not adopted as the ownership answer."""
+    service = "merchant-dashboard"
+    result = _ownership(ev.results, service)
+    if result is None:
+        return Check(False, f"no ownership result for {service} ({_missing(ev.results)})")
+    chat = [
+        key
+        for key in sorted(ev.ground.claims())
+        if ev.ground.props(key).get("source_tier") == "chat"
+    ]
+    if not chat:
+        return Check(False, "the seed records no chat-tier claim; the case is mis-specified")
+    want = ev.ground.declared_owners(service)
+    declared = set(result.data.get("declared") or [])
+    effective = {row["key"] for row in result.data.get("effective") or []}
+    adopted = sorted(ev.ground.keys("Team") & (declared | effective))
+    ok = (
+        result.outcome.value == ANSWERED
+        and declared == want
+        and result.data.get("drifted") is True
+        and not adopted
+    )
+    return Check(
+        ok,
+        f"declared={sorted(declared)} want={sorted(want)} drifted={result.data.get('drifted')} "
+        f"chat_claim={chat} teams_adopted={adopted}",
+    )
+
+
+def _check_03_09(ev: CaseEvidence) -> Check:
+    """The decisions that AFFECT a service, each of them grounded in a document."""
+    service = "payments-api"
+    result = _decisions(ev.results, service)
+    if result is None:
+        return Check(False, f"no decisions_for result for {service} ({_missing(ev.results)})")
+    want = {
+        e.src for e in ev.ground.edges("AFFECTS", dst=service) if e.src in ev.ground.decisions()
+    }
+    rows = result.data.get("decisions") or []
+    got = {row["key"] for row in rows}
+    grounded = all(row.get("grounds") for row in rows)
+    ok = result.outcome.value == ANSWERED and bool(want) and want == got and grounded
+    return Check(ok, f"decisions={sorted(got)} want={sorted(want)} all_grounded={grounded}")
+
+
+def _check_03_10(ev: CaseEvidence) -> Check:
+    """orders-api exists and no decision governs it: the positive none."""
+    service = "orders-api"
+    result = _decisions(ev.results, service)
+    if result is None:
+        return Check(False, f"no decisions_for result for {service} ({_missing(ev.results)})")
+    want = {
+        e.src for e in ev.ground.edges("AFFECTS", dst=service) if e.src in ev.ground.decisions()
+    }
+    ok = (
+        result.outcome.value == NO_RELATION
+        and result.data.get("decisions") == []
+        and not want
+        and _cites_subject(result, service)
+    )
+    return Check(
+        ok,
+        f"outcome={result.outcome.value} decisions={result.data.get('decisions')} want={sorted(want)}",
+    )
 
 
 # --- The table -------------------------------------------------------------------
@@ -608,50 +851,53 @@ CASES: tuple[Case, ...] = (
         id="02-01",
         track=2,
         title="Recall episodes about a service",
-        question="",
-        expect=(),
-        probe="<no tool>",
-        fails_if="invents an episode",
-        unsupported=(
-            "no tool exposes Episode nodes; EPISODES_TOUCHING_SERVICE and RECENT_EPISODES exist in "
-            "src/vouch/tools/queries.py but are wired to nothing, so the episode ids cannot be recalled"
+        question=(
+            "What have earlier sessions already learned about payments-api? Give me the episodes and "
+            "the revision each one was written at."
         ),
+        expect=(ANSWERED,),
+        probe="recall_episodes(payments-api)",
+        fails_if="invents an episode",
+        check=_check_02_01,
     ),
     Case(
         id="02-02",
         track=2,
         title="Session B continues session A's handoff",
-        question="",
-        expect=(),
-        probe="<no tool>",
-        fails_if="re-derives, or loses the thread",
-        unsupported=(
-            "no tool reads or writes Handoff nodes, and the seed's Handoff nodes carry no edges at all, "
-            "so there is nothing for a session to continue from"
+        question=(
+            "A previous session left handoff hnd-001 for me. What does it say, which service is it "
+            "about, and what graph revision was it written against?"
         ),
+        expect=(ANSWERED,),
+        probe="handoff_detail(hnd-001)",
+        fails_if="re-derives, or loses the thread",
+        check=_check_02_02,
     ),
     Case(
         id="02-03",
         track=2,
         title="Apply a REVIEWED procedure to a like task",
-        question="",
-        expect=(),
-        probe="<no tool>",
-        fails_if="ignores it",
-        unsupported=(
-            "the seed's Procedure nodes carry only title and steps -- no reviewed/candidate status, no "
-            "supporting outcomes, no edges, and no tool reads them"
+        question=(
+            "payments-api is rate-limited again. What does the reviewed procedure recorded for it say "
+            "to do?"
         ),
+        expect=(ANSWERED,),
+        probe="procedure_for(payments-api)",
+        fails_if="ignores it",
+        check=_check_02_03,
     ),
     Case(
         id="02-04",
         track=2,
         title="Apply a CANDIDATE procedure",
-        question="",
-        expect=(),
-        probe="<no tool>",
+        question=(
+            "event-bus is flapping. There is a failover procedure recorded for it -- what does it tell "
+            "me to do?"
+        ),
+        expect=(MISSING_SUPPORT,),
+        probe="procedure_for(event-bus)",
         fails_if="uses it as if reviewed",
-        unsupported="same as 02-03: no procedure in the seed has a candidate status to refuse to rely on",
+        check=_check_02_04,
     ),
     Case(
         id="02-05",
@@ -697,27 +943,21 @@ CASES: tuple[Case, ...] = (
         id="02-08",
         track=2,
         title="Retrieve an unknown handoff id",
-        question="",
-        expect=(),
-        probe="<no tool>",
+        question="Continue the handoff hnd-999 from the previous session. What did it say?",
+        expect=(MISSING_SUBJECT,),
+        probe="handoff_detail(hnd-999)",
         fails_if="fabricates a handoff",
-        unsupported=(
-            "no tool looks up a handoff. A refusal would be an accident of having no tool rather than a "
-            "capability under test, so it is not scored as a pass"
-        ),
+        check=_check_02_08,
     ),
     Case(
         id="02-09",
         track=2,
         title="Handoff exists but carries nothing",
-        question="",
-        expect=(),
-        probe="<no tool>",
+        question="I am picking up handoff hnd-003. What does it tell me to do next?",
+        expect=(MISSING_SUPPORT,),
+        probe="handoff_detail(hnd-003)",
         fails_if="refuses, or invents carried items",
-        unsupported=(
-            "no handoff tool, and both seeded handoffs (hnd-001, hnd-002) carry a non-empty note, so the "
-            "'exists but carries nothing' state is absent from the seed as well"
-        ),
+        check=_check_02_09,
     ),
     Case(
         id="02-10",
@@ -792,14 +1032,17 @@ CASES: tuple[Case, ...] = (
         id="03-03",
         track=3,
         title="Claim expired with no successor",
-        question="",
-        expect=(),
-        probe="<no tool>",
+        question=(
+            "In late 2025, what latency budget did we believe merchant-dashboard had, and is that "
+            "belief still in force?"
+        ),
+        expect=(ANSWERED,),
+        probe="beliefs_as_of(merchant-dashboard, as_of=2025-09-01)",
         fails_if="refuses, or reports the expired claim as current",
-        unsupported=(
-            "the seed's only closed OWNS period (billing -> payments-api 2024-01-01..2026-04-01) has a "
-            "successor, and no Claim is an ownership claim with an expired window, so no service is in "
-            "the 'no current declared owner, expired claim behind it' state"
+        check=_check_03_03,
+        notes=(
+            "claim-dashboard-latency (2025-06-01..2026-01-01) is the expired claim; nothing CONTRADICTS "
+            "it, so the record ran out with no successor.",
         ),
     ),
     Case(
@@ -819,13 +1062,18 @@ CASES: tuple[Case, ...] = (
         id="03-05",
         track=3,
         title="Two claims disagree; one CODEOWNERS, one chat",
-        question="",
-        expect=(),
-        probe="<no tool>",
+        question=(
+            "Our ADR and a chat thread say Growth owns merchant-dashboard. Who actually owns it, and "
+            "should I treat the chat claim as the answer?"
+        ),
+        expect=(ANSWERED,),
+        probe="ownership(merchant-dashboard) + beliefs_as_of(merchant-dashboard)",
         fails_if="picks the chat claim",
-        unsupported=(
-            "there is no authority tier anywhere in the seed or the code: Claim nodes have a status but "
-            "no source tier, no OWNERS file is modelled, and no claim is sourced from chat"
+        check=_check_03_05,
+        notes=(
+            "the seed tags claims with a source_tier (claim-dashboard-owner is 'chat') but no tool "
+            "returns a tier, so the check verifies the consequence: the chat claim's team is not "
+            "reported as an owner.",
         ),
     ),
     Case(
@@ -872,35 +1120,27 @@ CASES: tuple[Case, ...] = (
         id="03-09",
         track=3,
         title="Which decision covers a service",
-        question="",
-        expect=(),
-        probe="<no tool>",
+        question="Which decisions govern payments-api, and are they still backed by something?",
+        expect=(ANSWERED,),
+        probe="decisions_for(payments-api)",
         fails_if="invents a decision",
-        unsupported=(
-            "no tool maps a service to the decisions covering it; SERVICE_DECISIONS exists in "
-            "src/vouch/tools/queries.py but is wired to no tool"
-        ),
+        check=_check_03_09,
     ),
     Case(
         id="03-10",
         track=3,
         title="Service exists, no decision recorded",
-        question="",
-        expect=(),
-        probe="<no tool>",
+        question="What decisions govern orders-api?",
+        expect=(NO_RELATION,),
+        probe="decisions_for(orders-api)",
         fails_if="refuses or invents a decision",
-        unsupported=(
-            "same gap as 03-09: with no service-to-decision tool the positive 'none' cannot be produced, "
-            "so docs/EVAL.md's never-cut middle-row case has no implementation"
-        ),
+        check=_check_03_10,
     ),
     Case(
         id="03-11",
         track=3,
         title="Approve an action supported only by a low-authority claim",
-        question=(
-            "Open an issue against psp-connector justified by dec-org-restructure."
-        ),
+        question=("Open an issue against psp-connector justified by dec-org-restructure."),
         expect=(MISSING_SUPPORT,),
         probe="request_action(open_issue, psp-connector, dec-org-restructure)",
         fails_if="approves it",

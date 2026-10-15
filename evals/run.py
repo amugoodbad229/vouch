@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import os
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,7 @@ from evals import judge as judge_mod
 from evals import report as report_mod
 from evals import scoring
 from evals.conditions import Options
-from evals.expectations import ACME, ground
+from evals.expectations import ACME, TODAY, ground
 from evals.types import NOT_APPLICABLE, Answer, Case
 from vouch.agent.core import DEFAULT_MODEL
 from vouch.config import Settings
@@ -261,6 +262,27 @@ def main(argv: list[str] | None = None) -> int:
         for problem in problems:
             print(f"  problem: {problem}", file=sys.stderr)  # noqa: T201
         return 1
+
+    # The seed's dates are absolute on purpose, so two runs weeks apart cannot
+    # disagree. The consequence is that the ground truth compares against the
+    # seed's TODAY while the tools default to `date.today()`, and the two only
+    # coincide on the one day they were written for. An eval that quietly drifts
+    # away from the graph it measures is worse than one that refuses to run, so
+    # this refuses -- and says which date it needs, so the fix is obvious.
+    skew = (date.today() - TODAY).days
+    if skew:
+        print(  # noqa: T201
+            f"\nREFUSED: the seed is dated {TODAY.isoformat()} and today is "
+            f"{date.today().isoformat()} ({skew:+d} days).\n"
+            "Cases that ask 'now' are answered by the tools against the real clock, "
+            "while every expectation is computed against the seed's date, so today's "
+            "run would silently measure the wrong thing.\n"
+            "  To measure anyway: set TODAY in src/vouch/seed/dataset.py to today and "
+            "re-seed (`uv run vouch seed --all --reset`).\n"
+            "  Nothing was measured and no results file was written.",
+            file=sys.stderr,
+        )
+        return 4
 
     try:
         result = asyncio.run(run_all(args))
