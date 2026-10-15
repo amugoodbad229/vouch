@@ -125,6 +125,25 @@ def test_a_prose_hyphenation_is_not_treated_as_a_claim() -> None:
     assert verdict.invented == ()
 
 
+def test_a_key_written_with_a_non_breaking_hyphen_is_still_checked() -> None:
+    """The bug that shipped in the first agent run, and the reason `normalise` exists.
+
+    The model wrote every key with U+2011 instead of ASCII `-`. The shape regex
+    is looking for `-`, so it found nothing, and an answer full of service names
+    passed the citation check by spelling them with a different glyph. The
+    substitution is invisible outside a hex dump.
+    """
+    non_breaking = "orders\u2011api and ledger\u2011service depend on payments\u2011api."
+    verdict = check(non_breaking, [BLAST], ACME_KEYS)
+    assert not verdict.ok
+    assert verdict.unopened == ("ledger-service",), "reported with the graph's own spelling"
+
+
+def test_the_hyphen_fold_does_not_swallow_ordinary_prose() -> None:
+    text = "payments-api is well\u2011known and long\u2011standing, with high\u2011criticality."
+    assert check(text, [BLAST], ACME_KEYS).ok
+
+
 def test_data_values_count_as_read_even_when_they_are_not_evidence() -> None:
     """A tool may legitimately hand back a key in `data` that never became evidence."""
     res = ToolResult.answered(
@@ -192,9 +211,8 @@ def test_no_tool_call_means_no_answer() -> None:
 def test_a_no_relation_result_is_an_answer_not_a_refusal() -> None:
     """The middle case has to survive the guard, or the product refuses its best answer."""
     none_res = ToolResult.no_relation(
-        "No service calls internal-status-page.", subject=Evidence(
-            key="internal-status-page", label="Service", title="Internal Status Page"
-        )
+        "No service calls internal-status-page.",
+        subject=Evidence(key="internal-status-page", label="Service", title="Internal Status Page"),
     )
     guarded = enforce(
         "Nothing in the graph calls internal-status-page, so a change there affects nothing.",

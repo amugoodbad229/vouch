@@ -43,6 +43,34 @@ if TYPE_CHECKING:
 #: from a general rule about English, because the failure it guards against is a
 #: made-up *key* and not a made-up word.
 KEY_SHAPE = re.compile(r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b")
+
+#: Hyphens that are not the ASCII hyphen-minus.
+#:
+#: The first agent run against the seeded graph wrote `payments-api` with U+2011,
+#: and every one of those tokens went past the citation check without being
+#: looked at, because the shape regex is looking for a character the model had
+#: silently substituted. The substitution is invisible in anything but a hex
+#: dump. Checking a normalised copy of the sentence rather than an escaped
+#: `re` flag is the honest fix: it also means the *reported* violation names the
+#: key the way the graph spells it.
+_DASHES = str.maketrans(
+    {
+        "\u2010": "-",  # hyphen
+        "\u2011": "-",  # non-breaking hyphen
+        "\u2012": "-",  # figure dash
+        "\u2013": "-",  # en dash
+        "\u2014": "-",  # em dash
+        "\u2212": "-",  # minus sign
+        "\u00ad": "",  # soft hyphen
+    }
+)
+
+
+def normalise(text: str) -> str:
+    """Fold hyphen look-alikes so a key cannot slip past by changing one glyph."""
+    return text.translate(_DASHES)
+
+
 ALL_KEYS = f"""
 MATCH (n:{Label.SERVICE}) RETURN collect(DISTINCT n.key) AS keys
 UNION MATCH (n:{Label.DOCUMENT}) RETURN collect(DISTINCT n.key) AS keys
@@ -146,13 +174,13 @@ def _strings(value: Any) -> list[str]:
 
 
 def mentioned(text: str) -> set[str]:
-    """Key-shaped tokens in the prose.
+    """Key-shaped tokens in the prose, with hyphen look-alikes folded to ASCII.
 
     Deliberately a shape match rather than a vocabulary lookup: the check has to
     work when the model invents a key that has never existed, which is precisely
     when a vocabulary would be silent.
     """
-    return {m.group(0) for m in KEY_SHAPE.finditer(text)}
+    return {m.group(0) for m in KEY_SHAPE.finditer(normalise(text))}
 
 
 def vocabulary(universe: frozenset[str]) -> frozenset[str]:
@@ -192,9 +220,7 @@ def check(
     vocab = vocabulary(universe)
     unopened = sorted(n for n in named if n in universe and n not in allowed)
     invented = sorted(
-        n
-        for n in named
-        if n not in universe and n not in allowed and set(n.split("-")) & vocab
+        n for n in named if n not in universe and n not in allowed and set(n.split("-")) & vocab
     )
     return Verdict(
         ok=not unopened and not invented,
@@ -248,7 +274,9 @@ def enforce(text: str, results: Sequence[ToolResult], universe: frozenset[str]) 
             results=(),
         )
 
-    answered = [r for r in results if r.outcome is Outcome.ANSWERED or r.outcome is Outcome.NO_RELATION]
+    answered = [
+        r for r in results if r.outcome is Outcome.ANSWERED or r.outcome is Outcome.NO_RELATION
+    ]
     if not answered:
         reasons = "; ".join(m for r in results for m in r.missing_information)
         return GuardedAnswer(
