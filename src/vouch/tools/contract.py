@@ -230,16 +230,27 @@ class ToolResult:
         candidates: Iterable[str] = (),
         opened: Iterable[Evidence] = (),
         query: str = "",
+        what: str = "name",
     ) -> Self:
+        """The subject is not in the graph, so no query about it can be honest.
+
+        The candidate list goes in `data`, not in the message. It used to be
+        inlined, and the model -- correctly following "use the names a tool gave
+        you" -- recited all twenty-three on screen. A refusal is one sentence; the
+        list of what the graph *does* know belongs in the trace, where a reviewer
+        can find it and the answer does not have to carry it.
+        """
+        cands = sorted(candidates)
         hint = ""
-        if candidates:
-            hint = f" The graph does contain: {', '.join(sorted(candidates))}."
+        if cands:
+            hint = f" The graph knows {len(cands)} {what}s and this is not one of them."
         return cls(
             outcome=Outcome.MISSING_SUBJECT,
             missing_information=(
                 f"{subject!r} is not in the graph, so nothing can be said about it.{hint}",
             ),
             opened=tuple(opened),
+            data={"candidates": cands} if cands else {},
             query=query,
         )
 

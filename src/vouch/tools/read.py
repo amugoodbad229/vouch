@@ -118,6 +118,7 @@ async def resolve_service(
         return ToolResult.missing_subject(
             term,
             candidates=_candidate_keys(keys.rows),
+            what="service",
             query=q.RESOLVE_SERVICE,
         )
 
@@ -167,7 +168,7 @@ async def blast_radius(
     """
     subject, known = await _subject(client, tenant, service)
     if subject is None:
-        return ToolResult.missing_subject(service, candidates=known, query=q.blast_radius(depth))
+        return ToolResult.missing_subject(service, candidates=known, what="service", query=q.blast_radius(depth))
 
     query = q.blast_radius(depth)
     res = await client.read(tenant, query, {"service": service})
@@ -247,7 +248,7 @@ async def ownership(
     """
     subject, known = await _subject(client, tenant, service)
     if subject is None:
-        return ToolResult.missing_subject(service, candidates=known)
+        return ToolResult.missing_subject(service, candidates=known, what="service")
 
     when = (as_of or date.today()).isoformat() if not isinstance(as_of, str) else as_of
 
@@ -576,7 +577,7 @@ async def beliefs_as_of(
     """
     subject, known = await _subject(client, tenant, service)
     if subject is None:
-        return ToolResult.missing_subject(service, candidates=known)
+        return ToolResult.missing_subject(service, candidates=known, what="service")
 
     when = (as_of or date.today()).isoformat() if not isinstance(as_of, str) else as_of
     query = q.CLAIMS_EVER if include_all else q.CLAIMS_ABOUT
@@ -840,7 +841,7 @@ async def activity_since(
     if service is not None:
         subject, known = await _subject(client, tenant, service)
         if subject is None:
-            return ToolResult.missing_subject(service, candidates=known)
+            return ToolResult.missing_subject(service, candidates=known, what="service")
         res = await client.read(tenant, q.SERVICE_CHANGES, {"service": service, "since": when})
     else:
         res = await client.read(tenant, q.ALL_CHANGES_SINCE, {"since": when})
@@ -913,7 +914,7 @@ async def contradictions(
         if service is not None:
             subject, known = await _subject(client, tenant, service)
             if subject is None:
-                return ToolResult.missing_subject(service, candidates=known)
+                return ToolResult.missing_subject(service, candidates=known, what="service")
             anchor = subject
         return ToolResult.no_relation(
             f"No recorded contradiction{where}.",

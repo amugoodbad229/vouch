@@ -5,46 +5,62 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vouch — who really owns this?</title>
 <meta name="description" content="A time-versioned ownership, dependency and decision graph that refuses to answer when it cannot.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 129'><circle cx='64' cy='64' r='42' fill='none' stroke='%23b79cff' stroke-width='18' stroke-dasharray='1 13' stroke-linecap='round'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 129'><circle cx='64' cy='64' r='42' fill='none' stroke='%23101828' stroke-width='18' stroke-dasharray='1 13' stroke-linecap='round'/></svg>">
 <script src="/vendor/cytoscape.min.js"></script>
 <style>
 /* ============================================================================
    Vouch — design tokens
 
-   The chrome is monochrome with exactly one accent (--accent, used for
-   selection and the primary action and nothing else). Three colours are
-   semantic rather than decorative: --yes / --none / --no encode the three answer
-   shapes, and they are the only place colour carries meaning, because the three
-   answer shapes *are* the product. The twelve label colours further down are a
-   data encoding for the graph, the same way a chart has a categorical scale.
+   One saturated colour, and it is reserved for the action: --signal appears on
+   "Ask" and "Approve" -- the two controls that make something happen -- and
+   nowhere else. Everything else is ink on paper, which is what leaves the accent
+   able to mean anything at all.
 
-   One radius (8px). One shadow. A 8px spacing scale. Nothing below 12px, and
+   That rule has one consequence worth stating, because it is the product. The
+   three answer shapes are NOT colour-coded. They are the same word in the same
+   weight in the same place, distinguished only by the shape of a dot: filled for
+   an answer, hollow for a positive "nothing connects these", faded for a refusal.
+   Three colours would make the refusal look like an error and the empty relation
+   look like a warning; two monochrome states that differ by shape say what is
+   actually true, which is that these are three different kinds of statement and
+   only one of them is a failure to answer.
+
+   The twelve label colours further down are a data encoding for the graph, the
+   same way a chart has a categorical scale. The chrome never borrows them.
+
+   One radius (8px). One shadow. An 8px spacing scale. Nothing below 12px, and
    12px is reserved for uppercase eyebrows and monospace code.
    ========================================================================= */
 :root {
-  --bg: #0c0c0e;
-  --surface: #141417;
-  --surface-2: #1a1a1f;
-  --surface-3: #202027;
-  --line: #26262d;
-  --line-2: #33333d;
+  --bg: #f5f5f5;          /* Vellum — the page */
+  --surface: #ffffff;     /* Paper — cards */
+  --surface-2: #f5f5f5;   /* Vellum — inset surfaces, inputs, code */
+  --surface-3: #ececec;
+  --line: #e5e7eb;        /* Frost — hairlines */
+  --line-2: #d4d4d4;      /* Cloud — control borders */
 
-  --ink: #f4f4f6;
-  --dim: #a1a1ad;
-  --faint: #74747f;
+  --ink: #101828;         /* Slate 900 */
+  --dim: #4a5565;         /* Slate 600 */
+  --faint: #8a8a8a;       /* Iron */
 
-  --accent: #b79cff;
-  --accent-ink: #170d2b;
-  --accent-soft: rgba(183, 156, 255, .12);
+  --accent: #101828;      /* selection and focus are ink, not colour */
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(16, 24, 40, .08);
 
-  --yes: #5fd68a;
-  --none: #6ea8fe;
-  --no: #f0a04b;
-  --bad: #f4646f;
+  /* The only saturated colour in the system. */
+  --signal: linear-gradient(94deg, #ff0201 -33.85%, #ff7802 -1.54%, #ff0201 73.55%);
+  --signal-flat: #ff2d02;
+
+  /* Kept for the three answer shapes so no rule breaks if it still asks for one.
+     All three are ink; the difference is drawn, not coloured. */
+  --yes: #101828;
+  --none: #101828;
+  --no: #101828;
+  --bad: #b42318;         /* the one exception: an engine that is down */
 
   --r: 8px;
-  --shadow: 0 1px 3px rgba(0,0,0,.4), 0 6px 20px -8px rgba(0,0,0,.5);
-  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1);
+  --sans: Inter, "Söhne", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
   --t-micro: 12px;
@@ -59,7 +75,7 @@ body {
   font: 400 var(--t-body)/1.55 var(--sans);
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 4px; }
 button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 .eyebrow {
@@ -76,9 +92,9 @@ button { cursor: pointer; }
 .topbar {
   display: flex; align-items: center; gap: 12px;
   padding: 0 20px; height: 60px; flex: none;
-  border-bottom: 1px solid var(--line); background: var(--bg);
+  border-bottom: 1px solid var(--line); background: var(--surface);
 }
-.mark { width: 28px; height: 28px; flex: none; color: var(--ink); }
+.mark { width: 30px; height: 30px; flex: none; color: var(--ink); }
 .wordmark { font-size: 15px; font-weight: 620; letter-spacing: -.01em; line-height: 1.15; }
 .wordmark em { display: block; font: 400 12px/1.3 var(--sans); font-style: normal; color: var(--faint); letter-spacing: 0; }
 .topbar .spring { flex: 1 1 auto; }
@@ -90,10 +106,10 @@ button { cursor: pointer; }
 }
 .pill b { color: var(--ink); font-weight: 600; }
 .led { width: 7px; height: 7px; border-radius: 50%; background: var(--bad); flex: none; }
-.led.on { background: var(--yes); box-shadow: 0 0 0 3px rgba(95,214,138,.15); }
+.led.on { background: var(--ink); box-shadow: 0 0 0 3px var(--line); }
 
 .tabs { display: flex; gap: 4px; align-items: center; padding: 0 20px; height: 52px; flex: none;
-        border-bottom: 1px solid var(--line); background: var(--bg); }
+        border-bottom: 1px solid var(--line); background: var(--surface); }
 .tab {
   border: 1px solid transparent; background: none; color: var(--dim);
   padding: 7px 13px; border-radius: var(--r); font-size: 13.5px; font-weight: 500;
@@ -102,34 +118,37 @@ button { cursor: pointer; }
 .tab:hover { color: var(--ink); background: var(--surface); }
 .tab[aria-selected="true"] { color: var(--ink); background: var(--surface-2); border-color: var(--line-2); }
 .tab i { font: 600 12px/1 var(--mono); font-style: normal; color: var(--faint); }
-.tab[aria-selected="true"] i { color: var(--accent); }
+.tab[aria-selected="true"] i { color: var(--ink); }
 .tabs .spring { flex: 1 1 auto; }
 
-/* The three answer shapes, stated where a viewer will see them. */
+/* The three answer shapes, stated where a viewer will see them. Same word, same
+   weight, same place; only the dot differs. */
 .key { display: flex; gap: 14px; align-items: center; font-size: var(--t-micro); color: var(--faint); }
-.key span { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
-.key i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.key span { display: inline-flex; gap: 7px; align-items: center; white-space: nowrap; }
+.key i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--ink); }
+.key i.k-none { background: none; border: 2px solid var(--ink); width: 7px; height: 7px; }
+.key i.k-no { background: var(--ink); opacity: .35; box-shadow: 0 0 0 3px var(--line); }
 
 main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr); min-height: 0; }
 
 /* ---------- graph -------------------------------------------------------- */
 .stage { position: relative; border-right: 1px solid var(--line); overflow: hidden;
-         background: radial-gradient(120% 90% at 50% 0%, #15151a 0%, var(--bg) 65%); }
+         background: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, var(--bg) 65%); }
 #cy { position: absolute; inset: 0; }
 .stage-foot {
   position: absolute; left: 16px; right: 16px; bottom: 16px;
   display: flex; gap: 10px; align-items: flex-end; justify-content: space-between; pointer-events: none;
 }
 .legend {
-  background: rgba(12,12,14,.86); border: 1px solid var(--line); border-radius: var(--r);
+  background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: var(--r);
   padding: 9px 11px; font-size: var(--t-micro); color: var(--faint); line-height: 1.75; max-width: 330px;
-  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow);
 }
 .legend b { color: var(--dim); font-weight: 500; }
-.legend i { font-style: normal; font-family: var(--mono); color: var(--accent); }
+.legend i { font-style: normal; font-family: var(--mono); color: var(--ink); }
 .hint {
-  background: rgba(12,12,14,.86); border: 1px solid var(--line); border-radius: var(--r);
-  padding: 7px 11px; font-size: var(--t-micro); color: var(--faint); backdrop-filter: blur(6px);
+  background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 7px 11px; font-size: var(--t-micro); color: var(--faint); box-shadow: var(--shadow);
 }
 
 /* ---------- right pane --------------------------------------------------- */
@@ -140,25 +159,30 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) minm
 .stream { flex: 1 1 auto; overflow-y: auto; padding: 16px 22px 28px; scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { .stream { scroll-behavior: auto; } }
 
-.composer { flex: none; padding: 12px 22px 18px; border-top: 1px solid var(--line); background: var(--bg); }
+.composer { flex: none; padding: 12px 22px 18px; border-top: 1px solid var(--line); background: var(--surface); }
 .composer form { display: flex; gap: 8px; }
 .field {
   flex: 1 1 auto; background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r);
   padding: 11px 13px; font-size: var(--t-body);
 }
 .field::placeholder { color: var(--faint); }
-.field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.field:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--accent-soft); }
 .btn {
-  border: 1px solid var(--line-2); background: var(--surface-2); border-radius: var(--r);
-  padding: 10px 15px; font-size: 13.5px; font-weight: 550; white-space: nowrap;
+  border: 1px solid var(--line-2); background: var(--surface); border-radius: var(--r);
+  padding: 10px 15px; font-size: 13.5px; font-weight: 500; white-space: nowrap; color: var(--ink);
 }
-.btn:hover:not(:disabled) { background: var(--surface-3); border-color: #44444f; }
+.btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--faint); }
 .btn:disabled { opacity: .45; cursor: default; }
-.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 650; }
-.btn.primary:hover:not(:disabled) { background: #c7b2ff; border-color: transparent; }
-.btn.danger { color: var(--bad); border-color: #43242a; background: #1e1418; }
-.btn.danger:hover:not(:disabled) { background: #2a181d; }
-.btn.ghost { background: none; color: var(--dim); }
+/* One of the two places the system's only saturated colour is allowed. */
+.btn.primary {
+  background: var(--signal); color: #fff; border-color: transparent;
+  font-weight: 500; letter-spacing: .3px; text-transform: uppercase; font-size: 12px;
+}
+.btn.primary:hover:not(:disabled) { filter: brightness(1.06); border-color: transparent; }
+.btn.danger { color: var(--ink); border-color: var(--line-2); background: none; }
+.btn.danger:hover:not(:disabled) { background: var(--surface-2); }
+.btn.ghost { background: none; color: var(--dim); border-color: transparent; }
+.btn.ghost:hover:not(:disabled) { background: var(--surface-2); border-color: var(--line); }
 .btn.small { padding: 6px 10px; font-size: 12.5px; }
 
 /* ---------- ask-first empty state --------------------------------------- */
@@ -178,19 +202,32 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) minm
 /* ---------- a turn ------------------------------------------------------- */
 .turn { margin-bottom: 18px; }
 .q { display: flex; gap: 9px; align-items: baseline; margin-bottom: 10px; }
-.q .who { font: 600 12px/1.4 var(--mono); color: var(--accent); flex: none; }
+.q .who { font: 600 12px/1.4 var(--mono); color: var(--faint); flex: none; }
 .q .what { font-size: var(--t-lead); font-weight: 500; letter-spacing: -.005em; }
 
 .card { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
 .card-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+/* The outcome, drawn rather than coloured. Filled = an answer. Hollow = a
+   positive "nothing connects these". Faded = a refusal. Same word, same weight,
+   same position -- so the eye reads three different kinds of statement without
+   being told that a refusal is an error, which it is not. */
 .badge {
-  display: inline-flex; align-items: center; gap: 6px; border-radius: 999px;
-  border: 1px solid currentColor; padding: 3px 9px; font: 600 12px/1.4 var(--mono); flex: none;
+  display: inline-flex; align-items: center; gap: 8px; border: 0; padding: 0;
+  font: 600 12px/1.4 var(--sans); letter-spacing: .025em; text-transform: uppercase;
+  color: var(--ink); flex: none;
 }
-.badge.yes { color: var(--yes); }
-.badge.none { color: var(--none); }
-.badge.no { color: var(--no); }
-.badge.err { color: var(--bad); }
+.badge::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--ink);
+}
+.badge.none::before { background: none; border: 2px solid var(--ink); width: 7px; height: 7px; }
+.badge.no::before { background: var(--ink); opacity: .35; box-shadow: 0 0 0 3px var(--line); }
+.badge.err::before { background: var(--bad); }
+.badge.plain { text-transform: none; letter-spacing: 0; font: 500 12.5px/1.4 var(--sans); }
+.badge.plain::before { display: none; }
+.tag {
+  font: 500 12px/1 var(--sans); letter-spacing: .025em; text-transform: uppercase;
+  color: var(--faint); flex: none;
+}
 .card-head .meaning { font-size: 12.5px; color: var(--faint); }
 .card-body { padding: 14px; }
 .answer { font-size: var(--t-lead); line-height: 1.62; }
@@ -198,9 +235,9 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) minm
 .answer p:last-child { margin-bottom: 0; }
 .answer ul { margin: 0 0 8px; padding-left: 20px; }
 .answer li { margin-bottom: 3px; }
-.answer li::marker { color: var(--accent); }
+.answer li::marker { color: var(--faint); }
 .answer strong { font-weight: 600; }
-.answer code { font-family: var(--mono); font-size: 13.5px; background: var(--surface-3); padding: 1px 5px; border-radius: 4px; }
+.answer code { font-family: var(--mono); font-size: 13.5px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); padding: 1px 5px; border-radius: 4px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .chips .label { font-size: var(--t-micro); color: var(--faint); align-self: center; margin-right: 2px; }
@@ -208,8 +245,8 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) minm
   font: 500 12px/1.5 var(--mono); color: var(--dim); background: var(--surface-2);
   border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; cursor: pointer;
 }
-.chip:hover { color: var(--ink); border-color: var(--line-2); }
-.chip.bad { color: var(--bad); border-color: #43242a; }
+.chip:hover { color: var(--ink); border-color: var(--line-2); background: var(--surface-3); }
+.chip.bad { color: var(--bad); border-color: #f0c2bd; background: #fdf6f5; }
 
 .card-foot { border-top: 1px solid var(--line); }
 .card-foot > summary {
@@ -219,6 +256,7 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) minm
 .tstep > summary::-webkit-details-marker,
 .card-foot > summary::-webkit-details-marker { display: none; }
 .card-foot > summary::before { content: "▸"; color: var(--faint); font-size: 10px; transition: transform .15s; }
+.card-foot > summary:hover { color: var(--ink); }
 .card-foot[open] > summary::before { transform: rotate(90deg); }
 .card-foot > summary:hover { color: var(--ink); }
 .card-foot .body { padding: 0 14px 14px; display: grid; gap: 8px; }
@@ -232,49 +270,53 @@ main { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) minm
    a refusal and a success are the same component with a different status, which
    is exactly the product's claim. */
 .tstep { border-left: 2px solid var(--line-2); margin-left: 3px; }
-.tstep[data-status="error"] { border-left-color: #6b2f36; }
+.tstep[data-status="error"] { border-left-color: var(--faint); }
 .tstep > summary {
   display: grid; grid-template-columns: 15px auto 1fr 12px; align-items: baseline;
   gap: 8px; padding: 5px 10px; cursor: pointer; list-style: none; border-radius: 0 6px 6px 0;
 }
 .tstep > summary:hover { background: var(--surface-2); }
 .ticon { font-size: 11px; line-height: 1.5; text-align: center; }
-.ticon.ok { color: var(--yes); }
-.ticon.none { color: var(--none); }
-.ticon.error { color: var(--no); }
+.ticon.ok { color: var(--ink); }
+.ticon.none { color: var(--faint); }
+.ticon.error { color: var(--ink); opacity: .45; }
 .ticon.pending { color: var(--faint); }
 .ttitle { font: 600 12px/1.6 var(--mono); color: var(--ink); }
-.ttitle.refused { color: var(--no); }
+/* A refusal is not an error and is not coloured like one; it is quieter than an
+   answer, and the word in the summary already says which it is. */
+.ttitle.refused { color: var(--dim); }
 .tdesc { font-size: 12px; color: var(--faint); text-align: right; }
 .tchev { font-size: 9px; color: var(--faint); transition: transform .15s; }
 .tstep[open] > summary > .tchev { transform: rotate(90deg); }
 .tbody { padding: 2px 10px 10px 33px; display: grid; gap: 7px; }
-.tsub { font-size: 12.5px; color: #d5d5dd; display: grid; grid-template-columns: 12px 1fr; gap: 7px; }
+.tsub { font-size: 12.5px; color: var(--dim); display: grid; grid-template-columns: 12px 1fr; gap: 7px; }
 .tsub i { font-style: normal; color: var(--faint); text-align: center; }
-.tsub.conflict { color: var(--no); }
+.tsub.conflict { color: var(--ink); }
 .tsub.missing { color: var(--faint); }
 .tstep.running { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .45; } }
-.flag { font-size: 13.5px; color: var(--no); }
+.flag { font-size: 13.5px; color: var(--ink); }
 .flag.bad { color: var(--bad); }
 .missing { font-size: 12.5px; color: var(--faint); }
 pre {
-  background: #0e0e11; border: 1px solid var(--line); border-radius: var(--r); padding: 10px;
-  overflow-x: auto; font-family: var(--mono); font-size: 12.5px; color: #c9c9d3; margin: 0;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); padding: 10px;
+  overflow-x: auto; font-family: var(--mono); font-size: 12.5px; color: var(--dim); margin: 0;
 }
 .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
 /* ---------- the gate ---------------------------------------------------- */
-.gate { border-color: #3a2f52; background: linear-gradient(180deg, #16131e 0%, var(--surface) 60%); }
-.gate .card-head { border-bottom-color: #322a48; }
+/* The gate is the most consequential card on the page and it does not shout:
+   a heavier hairline, no fill, and the payload sitting in plain sight. */
+.gate { border-color: var(--faint); }
+.gate .card-head { border-bottom-color: var(--faint); }
 .gate h3 { font-size: 15px; font-weight: 600; }
-.gate .hash { font: 500 12px/1.5 var(--mono); color: var(--accent); }
+.gate .hash { font: 500 12px/1.5 var(--mono); color: var(--ink); }
 .gate .body { padding: 14px; }
 .gate textarea {
-  width: 100%; background: #0e0e11; border: 1px solid var(--line); border-radius: var(--r);
-  padding: 10px; font: 400 12.5px/1.6 var(--mono); color: #c9c9d3; resize: vertical; margin-top: 10px;
+  width: 100%; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 10px; font: 400 12.5px/1.6 var(--mono); color: var(--dim); resize: vertical; margin-top: 10px;
 }
-.gate textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.gate textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* ---------- transient states ------------------------------------------- */
 .skel { display: grid; gap: 10px; }
@@ -286,7 +328,7 @@ pre {
 .note { font-size: 12.5px; color: var(--faint); margin-top: 9px; }
 .toast {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-  background: var(--surface-3); border: 1px solid var(--line-2); border-radius: var(--r);
+  background: var(--ink); color: #fff; border: 1px solid var(--ink); border-radius: var(--r);
   padding: 9px 14px; font-size: 13px; box-shadow: var(--shadow); z-index: 20;
 }
 
@@ -295,6 +337,7 @@ pre {
   main { grid-template-columns: minmax(0, 1fr); grid-template-rows: 42vh minmax(0, 1fr); }
   .stage { border-right: 0; border-bottom: 1px solid var(--line); }
   .key { display: none; }
+  .btn.primary { padding: 10px 14px; }
   .stage-foot { left: 12px; right: 12px; bottom: 12px; }
   .legend { display: none; }
 }
@@ -304,12 +347,7 @@ pre {
 
 <div class="app">
   <header class="topbar">
-    <svg class="mark" viewBox="0 0 128 129" fill="none" aria-hidden="true">
-      <path fill="currentColor" d="M66.07 124.511c-.229-2.28 1.367-4.333 3.647-4.561s4.332 1.369 4.56 3.649-1.368 4.332-3.648 4.56h-.456c-2.052 0-3.876-1.368-4.104-3.648m-25.993 0c-2.052-.912-3.192-3.192-2.28-5.244.684-2.052 3.192-3.193 5.244-2.509 2.052.912 3.192 3.192 2.508 5.244-.684 1.597-2.28 2.737-3.876 2.737-.684 0-1.14 0-1.596-.228m53.808-8.209c-1.368-1.824-.912-4.332 1.14-5.7 1.824-1.368 4.332-.912 5.7 1.14 1.368 1.824.912 4.332-1.14 5.7-.684.456-1.596.685-2.28.685-1.368-.228-2.736-.685-3.42-1.825m-79.344-9.348c-1.596-1.596-1.368-4.332.228-5.928s4.332-1.368 5.928.456c1.596 1.596 1.368 4.332-.456 5.928-.684.684-1.824 1.14-2.736 1.14-.912-.228-2.052-.684-2.964-1.596m99.864-11.172c-2.052-1.14-2.736-3.648-1.824-5.472 1.14-2.052 3.648-2.736 5.472-1.824 2.052 1.14 2.737 3.648 1.824 5.472-.684 1.368-2.28 2.28-3.648 2.28-.456 0-1.14 0-1.824-.456M.177 79.822c-.456-2.28.912-4.332 2.964-5.016 2.28-.456 4.332.684 5.016 2.964.456 2.28-.912 4.332-2.964 5.016-.228 0-.684.228-.912.228-1.824-.228-3.648-1.368-4.104-3.192M119.193 64.09c0-2.508 1.825-4.332 4.105-4.332a4.087 4.087 0 0 1 4.104 4.104v.456a4.087 4.087 0 0 1-4.104 4.104c-2.28-.228-4.105-2.052-4.105-4.332M3.141 53.83C.86 53.374-.507 51.094.177 48.814c.456-2.28 2.736-3.648 5.016-2.964 2.28.456 3.648 2.736 2.964 5.016-.456 1.824-2.052 3.192-4.104 3.192-.228 0-.456-.228-.912-.228m109.44-15.96c-1.14-2.052-.228-4.56 1.824-5.472 2.052-1.14 4.56-.228 5.472 1.596 1.141 2.052.229 4.56-1.596 5.472-.684.228-1.368.456-1.824.456-1.824.228-3.192-.684-3.876-2.052M14.769 27.382c-1.596-1.596-1.824-4.104-.456-5.7 1.596-1.824 4.104-1.824 5.7-.456 1.596 1.596 1.824 4.104.456 5.928-.912.912-2.052 1.368-3.192 1.368-.684-.228-1.596-.456-2.508-1.14m79.8-9.576c-1.824-1.368-2.28-3.876-1.14-5.7 1.368-1.824 3.876-2.28 5.7-1.14 1.824 1.368 2.28 3.876 1.14 5.7-.684 1.14-2.052 1.824-3.42 1.824-.684 0-1.596-.228-2.28-.684M37.341 9.142c-.912-2.052.228-4.56 2.28-5.244 2.052-.912 4.56.228 5.244 2.28.912 2.052-.228 4.56-2.28 5.244-.456.228-.912.228-1.368.228-1.596.228-3.192-.684-3.876-2.508m32.148-.912c-2.28-.228-3.876-2.28-3.648-4.56s2.28-3.876 4.56-3.648 3.876 2.28 3.648 4.56c-.228 2.052-2.052 3.648-4.104 3.648-.228.228-.228 0-.456 0"/>
-      <path fill="currentColor" d="M66.07 124.511c-.229-2.28 1.367-4.333 3.647-4.561s4.332 1.369 4.56 3.649-1.368 4.332-3.648 4.56h-.456c-2.052 0-3.876-1.368-4.104-3.648m-25.993 0c-2.052-.912-3.192-3.192-2.28-5.244.684-2.052 3.192-3.193 5.244-2.509 2.052.912 3.192 3.192 2.508 5.244-.684 1.597-2.28 2.737-3.876 2.737-.684 0-1.14 0-1.596-.228m53.808-8.209c-1.368-1.824-.912-4.332 1.14-5.7 1.824-1.368 4.332-.912 5.7 1.14 1.368 1.824.912 4.332-1.14 5.7-.684.456-1.596.685-2.28.685-1.368-.228-2.736-.685-3.42-1.825m-79.344-9.348c-1.596-1.596-1.368-4.332.228-5.928s4.332-1.368 5.928.456c1.596 1.596 1.368 4.332-.456 5.928-.684.684-1.824 1.14-2.736 1.14-.912-.228-2.052-.684-2.964-1.596m99.864-11.172c-2.052-1.14-2.736-3.648-1.824-5.472 1.14-2.052 3.648-2.736 5.472-1.824 2.052 1.14 2.737 3.648 1.824 5.472-.684 1.368-2.28 2.28-3.648 2.28-.456 0-1.14 0-1.824-.456M.177 79.822c-.456-2.28.912-4.332 2.964-5.016 2.28-.456 4.332.684 5.016 2.964.456 2.28-.912 4.332-2.964 5.016-.228 0-.684.228-.912.228-1.824-.228-3.648-1.368-4.104-3.192M119.193 64.09c0-2.508 1.825-4.332 4.105-4.332a4.087 4.087 0 0 1 4.104 4.104v.456a4.087 4.087 0 0 1-4.104 4.104c-2.28-.228-4.105-2.052-4.105-4.332M3.141 53.83C.86 53.374-.507 51.094.177 48.814c.456-2.28 2.736-3.648 5.016-2.964 2.28.456 3.648 2.736 2.964 5.016-.456 1.824-2.052 3.192-4.104 3.192-.228 0-.456-.228-.912-.228m109.44-15.96c-1.14-2.052-.228-4.56 1.824-5.472 2.052-1.14 4.56-.228 5.472 1.596 1.141 2.052.229 4.56-1.596 5.472-.684.228-1.368.456-1.824.456-1.824.228-3.192-.684-3.876-2.052M14.769 27.382c-1.596-1.596-1.824-4.104-.456-5.7 1.596-1.824 4.104-1.824 5.7-.456 1.596 1.596 1.824 4.104.456 5.928-.912.912-2.052 1.368-3.192 1.368-.684-.228-1.596-.456-2.508-1.14m79.8-9.576c-1.824-1.368-2.28-3.876-1.14-5.7 1.368-1.824 3.876-2.28 5.7-1.14 1.824 1.368 2.28 3.876 1.14 5.7-.684 1.14-2.052 1.824-3.42 1.824-.684 0-1.596-.228-2.28-.684M37.341 9.142c-.912-2.052.228-4.56 2.28-5.244 2.052-.912 4.56.228 5.244 2.28.912 2.052-.228 4.56-2.28 5.244-.456.228-.912.228-1.368.228-1.596.228-3.192-.684-3.876-2.508m32.148-.912c-2.28-.228-3.876-2.28-3.648-4.56s2.28-3.876 4.56-3.648 3.876 2.28 3.648 4.56c-.228 2.052-2.052 3.648-4.104 3.648-.228.228-.228 0-.456 0m-3.875 105.337c-.229-1.824 1.14-3.42 2.963-3.648 1.825-.228 3.42 1.14 3.648 2.964s-1.14 3.42-2.963 3.648h-.457c-1.596 0-3.192-1.14-3.192-2.964m-21.433 0c-1.824-.684-2.508-2.508-2.052-4.332.684-1.824 2.508-2.508 4.332-2.052 1.824.684 2.508 2.508 2.052 4.332-.456 1.368-1.824 2.28-3.192 2.28-.456 0-.684 0-1.14-.228m44.005-6.84c-1.14-1.596-.684-3.648.912-4.788s3.648-.684 4.788.912.684 3.648-.912 4.788c-.684.456-1.368.684-1.824.684-1.368-.228-2.28-.684-2.964-1.596m-64.753-7.524a3.526 3.526 0 0 1 .228-4.788 3.526 3.526 0 0 1 4.788.228 3.526 3.526 0 0 1-.228 4.788c-.684.456-1.368.912-2.28.912s-1.824-.456-2.508-1.14m81.625-9.12c-1.596-.912-2.28-2.964-1.368-4.56s2.964-2.28 4.56-1.368 2.28 2.964 1.368 4.56c-.684 1.14-1.824 1.824-2.964 1.824-.684 0-1.14-.228-1.596-.456m-93.48-13.224c-.457-1.824.683-3.648 2.507-4.104s3.648.684 4.104 2.508-.684 3.648-2.508 4.104h-.912c-1.368 0-2.736-.912-3.192-2.508m97.356-12.768c0-2.052 1.596-3.648 3.42-3.648s3.42 1.596 3.42 3.42-1.596 3.42-3.42 3.42c-2.052.228-3.42-1.14-3.42-3.192m-94.849-8.436c-1.824-.456-2.964-2.28-2.508-4.104s2.28-2.964 4.104-2.508 2.964 2.28 2.508 4.104c-.456 1.596-1.824 2.508-3.192 2.508-.456.228-.684.228-.912 0m89.377-12.996c-.912-1.596-.228-3.648 1.368-4.56s3.648-.228 4.56 1.368.228 3.648-1.368 4.56c-.456.228-1.14.456-1.596.456-1.14 0-2.28-.684-2.964-1.824m-79.8-8.664c-1.369-1.14-1.597-3.42-.229-4.788 1.14-1.369 3.42-1.597 4.788-.229 1.368 1.14 1.596 3.42.228 4.788-.684.684-1.596 1.14-2.508 1.14s-1.824-.227-2.28-.911m65.208-7.753c-1.596-1.14-1.824-3.192-.912-4.788 1.14-1.596 3.192-1.824 4.788-.912 1.596 1.14 1.824 3.192.912 4.788-.684.913-1.824 1.369-2.736 1.369-.912.227-1.368 0-2.052-.457m-46.74-7.068a3.37 3.37 0 0 1 1.823-4.332c1.824-.684 3.648.228 4.332 2.052a3.37 3.37 0 0 1-1.824 4.333c-.456.227-.912.227-1.14.227-1.596 0-2.736-.912-3.192-2.28m26.22-.684c-1.825-.228-3.192-1.824-2.965-3.648s1.825-3.192 3.648-2.964c1.825.228 3.192 1.824 2.965 3.648-.229 1.824-1.597 2.964-3.42 2.964z"/>
-      <path fill="currentColor" d="M65.614 113.567c-.229-1.824 1.14-3.42 2.963-3.648 1.825-.228 3.42 1.14 3.648 2.964s-1.14 3.42-2.963 3.648h-.457c-1.596 0-3.192-1.14-3.192-2.964m-21.433 0c-1.824-.684-2.508-2.508-2.052-4.332.684-1.824 2.508-2.508 4.332-2.052 1.824.684 2.508 2.508 2.052 4.332-.456 1.368-1.824 2.28-3.192 2.28-.456 0-.684 0-1.14-.228m44.005-6.84c-1.14-1.596-.684-3.648.912-4.788s3.648-.684 4.788.912.684 3.648-.912 4.788c-.684.456-1.368.684-1.824.684-1.368-.228-2.28-.684-2.964-1.596m-64.753-7.524a3.526 3.526 0 0 1 .228-4.788 3.526 3.526 0 0 1 4.788.228 3.526 3.526 0 0 1-.228 4.788c-.684.456-1.368.912-2.28.912s-1.824-.456-2.508-1.14m81.625-9.12c-1.596-.912-2.28-2.964-1.368-4.56s2.964-2.28 4.56-1.368 2.28 2.964 1.368 4.56c-.684 1.14-1.824 1.824-2.964 1.824-.684 0-1.14-.228-1.596-.456m-93.48-13.224c-.457-1.824.683-3.648 2.507-4.104s3.648.684 4.104 2.508-.684 3.648-2.508 4.104h-.912c-1.368 0-2.736-.912-3.192-2.508m97.356-12.768c0-2.052 1.596-3.648 3.42-3.648s3.42 1.596 3.42 3.42-1.596 3.42-3.42 3.42c-2.052.228-3.42-1.14-3.42-3.192m-94.849-8.436c-1.824-.456-2.964-2.28-2.508-4.104s2.28-2.964 4.104-2.508 2.964 2.28 2.508 4.104c-.456 1.596-1.824 2.508-3.192 2.508-.456.228-.684.228-.912 0m89.377-12.996c-.912-1.596-.228-3.648 1.368-4.56s3.648-.228 4.56 1.368.228 3.648-1.368 4.56c-.456.228-1.14.456-1.596.456-1.14 0-2.28-.684-2.964-1.824m-79.8-8.664c-1.369-1.14-1.597-3.42-.229-4.788 1.14-1.369 3.42-1.597 4.788-.229 1.368 1.14 1.596 3.42.228 4.788-.684.684-1.596 1.14-2.508 1.14s-1.824-.227-2.28-.911m65.208-7.753c-1.596-1.14-1.824-3.192-.912-4.788 1.14-1.596 3.192-1.824 4.788-.912 1.596 1.14 1.824 3.192.912 4.788-.684.913-1.824 1.369-2.736 1.369-.912.227-1.368 0-2.052-.457m-46.74-7.068a3.37 3.37 0 0 1 1.823-4.332c1.824-.684 3.648.228 4.332 2.052a3.37 3.37 0 0 1-1.824 4.333c-.456.227-.912.227-1.14.227-1.596 0-2.736-.912-3.192-2.28m26.22-.684c-1.825-.228-3.192-1.824-2.965-3.648s1.825-3.192 3.648-2.964c1.825.228 3.192 1.824 2.965 3.648-.229 1.824-1.597 2.964-3.42 2.964zm-3.416 85.728c-.229-1.596.911-2.964 2.28-2.964 1.595-.228 2.963.912 2.963 2.28.228 1.368-.912 2.964-2.28 2.964h-.228c-1.368.228-2.508-.912-2.736-2.28m-17.1 0c-1.369-.456-2.053-2.052-1.597-3.42s2.052-2.052 3.42-1.596 2.052 2.052 1.596 3.42c-.456 1.14-1.368 1.824-2.508 1.824-.456 0-.684-.228-.912-.228m35.567-5.472c-.912-1.14-.456-2.964.684-3.876s2.965-.456 3.876.684c.913 1.14.457 2.964-.683 3.876-.457.228-.912.456-1.597.456-.912 0-1.824-.456-2.28-1.14m-52.44-6.156c-.912-1.14-.912-2.736.228-3.876 1.14-.912 2.964-.912 3.876.228s.912 2.964-.228 3.876c-.456.456-1.14.684-1.824.684-.912 0-1.596-.228-2.052-.912m66.12-7.296c-1.367-.684-1.823-2.28-1.14-3.648.685-1.368 2.28-1.824 3.649-1.14 1.368.684 1.824 2.28 1.14 3.648-.456.912-1.368 1.368-2.508 1.368-.456 0-.684-.228-1.14-.228M21.382 74.578c-.456-1.368.456-2.964 2.052-3.42 1.368-.456 2.964.456 3.42 2.052.456 1.368-.456 2.964-2.052 3.42h-.684c-1.368 0-2.508-.912-2.736-2.052m78.661-10.488c0-1.596 1.14-2.964 2.736-2.964s2.736 1.14 2.736 2.736-1.14 2.736-2.736 2.736c-1.368.228-2.736-.912-2.736-2.508m-76.837-6.84c-1.368-.456-2.28-1.824-2.052-3.192.456-1.368 1.824-2.28 3.192-2.052 1.368.456 2.28 1.824 2.052 3.42-.228 1.14-1.368 2.052-2.736 2.052 0 0-.228 0-.456-.228M95.71 46.762c-.684-1.368-.228-2.964 1.14-3.648s2.964-.228 3.648 1.14.228 2.964-1.14 3.648c-.456.228-.912.228-1.368.228-.684 0-1.596-.456-2.28-1.368m-64.753-7.068c-1.14-.912-1.14-2.736-.228-3.876s2.736-1.14 3.876-.228 1.14 2.736.228 3.876c-.456.684-1.368.912-2.052.912s-1.14-.228-1.824-.684m52.896-6.156c-1.14-.912-1.596-2.508-.683-3.876.912-1.14 2.507-1.596 3.876-.684 1.14.912 1.596 2.508.684 3.876-.456.684-1.368 1.14-2.28 1.14-.457 0-1.14-.228-1.597-.456m-37.848-5.7c-.456-1.368.228-2.964 1.596-3.42s2.964.228 3.42 1.596-.228 2.964-1.596 3.42c-.228.228-.684.228-.912.228-1.14-.228-2.052-.912-2.508-1.824m21.204-.684c-1.596-.228-2.508-1.596-2.508-2.964.228-1.596 1.596-2.508 2.964-2.28 1.596.228 2.508 1.596 2.28 2.964s-1.368 2.508-2.736 2.508c.228-.228.228-.228 0-.228"/>
-      <path fill="currentColor" d="M64.93 104.218c-.229-1.596.911-2.964 2.28-2.964 1.595-.228 2.963.912 2.963 2.28.228 1.368-.912 2.964-2.28 2.964h-.228c-1.368.228-2.508-.912-2.736-2.28m-17.1 0c-1.369-.456-2.053-2.052-1.597-3.42s2.052-2.052 3.42-1.596 2.052 2.052 1.596 3.42c-.456 1.14-1.368 1.824-2.508 1.824-.456 0-.684-.228-.912-.228m35.567-5.472c-.912-1.14-.456-2.964.684-3.876s2.965-.456 3.876.684c.913 1.14.457 2.964-.683 3.876-.457.228-.912.456-1.597.456-.912 0-1.824-.456-2.28-1.14m-52.44-6.156c-.912-1.14-.912-2.736.228-3.876 1.14-.912 2.964-.912 3.876.228s.912 2.964-.228 3.876c-.456.456-1.14.684-1.824.684-.912 0-1.596-.228-2.052-.912m66.12-7.296c-1.367-.684-1.823-2.28-1.14-3.648.685-1.368 2.28-1.824 3.649-1.14 1.368.684 1.824 2.28 1.14 3.648-.456.912-1.368 1.368-2.508 1.368-.456 0-.684-.228-1.14-.228M21.382 74.578c-.456-1.368.456-2.964 2.052-3.42 1.368-.456 2.964.456 3.42 2.052.456 1.368-.456 2.964-2.052 3.42h-.684c-1.368 0-2.508-.912-2.736-2.052m78.661-10.488c0-1.596 1.14-2.964 2.736-2.964s2.736 1.14 2.736 2.736-1.14 2.736-2.736 2.736c-1.368.228-2.736-.912-2.736-2.508m-76.837-6.84c-1.368-.456-2.28-1.824-2.052-3.192.456-1.368 1.824-2.28 3.192-2.052 1.368.456 2.28 1.824 2.052 3.42-.228 1.14-1.368 2.052-2.736 2.052 0 0-.228 0-.456-.228M95.71 46.762c-.684-1.368-.228-2.964 1.14-3.648s2.964-.228 3.648 1.14.228 2.964-1.14 3.648c-.456.228-.912.228-1.368.228-.684 0-1.596-.456-2.28-1.368m-64.753-7.068c-1.14-.912-1.14-2.736-.228-3.876s2.736-1.14 3.876-.228 1.14 2.736.228 3.876c-.456.684-1.368.912-2.052.912s-1.14-.228-1.824-.684m52.896-6.156c-1.14-.912-1.596-2.508-.683-3.876.912-1.14 2.507-1.596 3.876-.684 1.14.912 1.596 2.508.684 3.876-.456.684-1.368 1.14-2.28 1.14-.457 0-1.14-.228-1.597-.456m-37.848-5.7c-.456-1.368.228-2.964 1.596-3.42s2.964.228 3.42 1.596-.228 2.964-1.596 3.42c-.228.228-.684.228-.912.228-1.14-.228-2.052-.912-2.508-1.824m21.204-.684c-1.596-.228-2.508-1.596-2.508-2.964.228-1.596 1.596-2.508 2.964-2.28 1.596.228 2.508 1.596 2.28 2.964s-1.368 2.508-2.736 2.508c.228-.228.228-.228 0-.228"/>
-    </svg>
+    <svg class="mark" viewBox="0 0 128 128" fill="currentColor" aria-hidden="true"><circle cx='64.0' cy='20.0' r='7'/><circle cx='79.0' cy='22.7' r='7'/><circle cx='92.3' cy='30.3' r='7'/><circle cx='102.1' cy='42.0' r='7'/><circle cx='107.3' cy='56.4' r='7'/><circle cx='107.3' cy='71.6' r='7'/><circle cx='102.1' cy='86.0' r='7'/><circle cx='92.3' cy='97.7' r='7'/><circle cx='79.0' cy='105.3' r='7'/><circle cx='64.0' cy='108.0' r='7'/><circle cx='49.0' cy='105.3' r='7'/><circle cx='35.7' cy='97.7' r='7'/><circle cx='25.9' cy='86.0' r='7'/><circle cx='20.7' cy='71.6' r='7'/><circle cx='20.7' cy='56.4' r='7'/><circle cx='25.9' cy='42.0' r='7'/><circle cx='35.7' cy='30.3' r='7'/><circle cx='49.0' cy='22.7' r='7'/></svg>
     <div class="wordmark">Vouch<em>Who really owns this?</em></div>
     <div class="spring"></div>
     <div class="pill" id="engine" role="status"><span class="led"></span>connecting…</div>
@@ -321,9 +359,9 @@ pre {
     <button class="tab" role="tab" data-track="03" aria-selected="false"><i>03</i>Company brain</button>
     <div class="spring"></div>
     <div class="key" aria-label="The three answer shapes">
-      <span><i style="background:var(--yes)"></i>answered</span>
-      <span><i style="background:var(--none)"></i>no relation — a real answer</span>
-      <span><i style="background:var(--no)"></i>refused</span>
+      <span><i class="k-yes"></i>answered</span>
+      <span><i class="k-none"></i>no relation — a real answer</span>
+      <span><i class="k-no"></i>refused</span>
     </div>
   </nav>
 
@@ -398,11 +436,12 @@ const TRACKS = {
 };
 
 /* Categorical encoding for the graph, the way a chart has a categorical scale.
-   These are not chrome colours and the chrome never borrows them. */
+   These are not chrome colours and the chrome never borrows them; they are tuned
+   to sit on Paper without glowing. */
 const LABEL_COLOR = {
-  Service:"#5b8def", Team:"#5fd68a", Person:"#f0a04b", Document:"#b79cff",
-  Decision:"#e879f9", Change:"#94a3b8", Incident:"#f4646f", Claim:"#22d3ee",
-  Episode:"#fbbf24", Procedure:"#a3a3a3", Handoff:"#fb923c", Action:"#84cc16",
+  Service:"#2f5fd0", Team:"#1f7a4d", Person:"#b4601a", Document:"#6b4fc9",
+  Decision:"#a32ea0", Change:"#5a6472", Incident:"#b42318", Claim:"#0e7490",
+  Episode:"#a16207", Procedure:"#6b7280", Handoff:"#c2410c", Action:"#4d7c0f",
 };
 
 const MEANING = {
@@ -438,23 +477,28 @@ function renderGraph() {
           "width": el => 11 + 3.2 * (el.data("crit") || 2),
           "height": el => 11 + 3.2 * (el.data("crit") || 2),
           label: "data(label)", "font-size": 10, "font-family": "ui-monospace, monospace",
-          color: "#e9e9ef", "text-valign": "bottom", "text-margin-y": 5,
-          "text-outline-color": "#0c0c0e", "text-outline-width": 3,
+          color: "#101828", "text-valign": "bottom", "text-margin-y": 5,
+          "text-outline-color": "#ffffff", "text-outline-width": 3,
           "border-width": 0, "transition-property": "opacity", "transition-duration": "120ms",
       }},
       { selector: "edge", style: {
-          width: 1, "line-color": "#2c2c35", "target-arrow-color": "#2c2c35",
+          width: 1, "line-color": "#d4d4d4", "target-arrow-color": "#d4d4d4",
           "target-arrow-shape": "triangle", "arrow-scale": .65, "curve-style": "bezier",
           "transition-property": "opacity", "transition-duration": "120ms",
       }},
-      { selector: 'edge[rel = "OWNS"]', style: { "line-color":"#2f5c3a","target-arrow-color":"#2f5c3a","line-style":"dashed" }},
-      { selector: 'edge[rel = "CONTRADICTS"]', style: { "line-color":"#7a2a33","target-arrow-color":"#7a2a33" }},
-      { selector: 'edge[rel = "SUPPORTS"]', style: { "line-color":"#4a3f66","target-arrow-color":"#4a3f66" }},
-      { selector: 'edge[rel = "SUPERSEDES"]', style: { "line-color":"#6b4a2a","target-arrow-color":"#6b4a2a","line-style":"dotted" }},
-      { selector: "node:selected", style: { "border-width": 3, "border-color": "#b79cff" }},
+      { selector: 'edge[rel = "OWNS"]', style: { "line-color":"#9a9a9a","target-arrow-color":"#9a9a9a","line-style":"dashed" }},
+      { selector: 'edge[rel = "CONTRADICTS"]', style: { "line-color":"#b42318","target-arrow-color":"#b42318" }},
+      { selector: 'edge[rel = "SUPPORTS"]', style: { "line-color":"#9a9a9a","target-arrow-color":"#9a9a9a" }},
+      { selector: 'edge[rel = "SUPERSEDES"]', style: { "line-color":"#b8b8b8","target-arrow-color":"#b8b8b8","line-style":"dotted" }},
+      { selector: "node:selected", style: { "border-width": 3, "border-color": "#101828" }},
       { selector: ".faded", style: { opacity: .12 }},
     ],
-    layout: { name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 72, padding: 34 },
+    /* Layered, not force-directed. CALLS is a DAG, so a layered layout shows hop
+       distance as literal distance from the top -- which is the whole story of the
+       depth-4 answer -- while `cose` on this many nodes produces a hairball whose
+       labels collide. */
+    layout: { name: "breadthfirst", directed: true, spacingFactor: 1.05,
+              padding: 54, animate: false },
   });
   cy.on("tap", "node", ev => {
     const kind = ev.target.data("kind"), key = ev.target.data("label");
@@ -495,12 +539,17 @@ function stepHTML(t, open) {
   if (t.facts.length) bits.push(`${t.facts.length} fact${t.facts.length === 1 ? "" : "s"}`);
   if (t.evidence.length) bits.push(`${t.evidence.length} opened`);
   if (t.conflicts.length) bits.push(`${t.conflicts.length} conflict${t.conflicts.length === 1 ? "" : "s"}`);
+  const cands = t.candidates || [];
   if (t.paths.length) bits.push(`${t.paths.length} path${t.paths.length === 1 ? "" : "s"}`);
+  if (cands.length) bits.push(`${cands.length} known`);
   const inner = [
     ...t.facts.map(f => `<div class="tsub"><i>·</i><span>${esc(f)}</span></div>`),
     ...t.conflicts.map(c => `<div class="tsub conflict"><i>!</i><span>${esc(c)}</span></div>`),
-    ...t.missing_information.map(m => `<div class="tsub missing"><i>?</i><span>would need: ${esc(m)}</span></div>`),
+    ...t.missing_information.map(m => `<div class="tsub missing"><i>?</i><span>${esc(m)}</span></div>`),
     ...t.paths.map(p => `<div class="tsub"><i>↳</i><span class="mono">${esc(p)}</span></div>`),
+    ...(cands.length
+      ? [`<div class="tsub missing"><i>+</i><span class="mono">${cands.map(esc).join(" · ")}</span></div>`]
+      : []),
     ...(t.evidence.length
       ? [`<div class="tsub"><i>§</i><span class="mono">${t.evidence.map(esc).join("<br>")}</span></div>`]
       : []),
@@ -554,7 +603,7 @@ function skeleton(question) {
   return `<div class="turn">
     <div class="q"><span class="who">you</span><span class="what">${esc(question)}</span></div>
     <div class="card"><div class="card-head">
-      <span class="badge" style="color:var(--faint)">◐ running</span>
+      <span class="badge plain" style="color:var(--faint)">◐ running</span>
       <span class="meaning">the model is choosing a tool</span>
     </div>
     <div class="card-body"><div class="skel"><div></div><div></div><div></div></div></div>
@@ -572,7 +621,6 @@ function turnHTML(question, d) {
 
   const steps = (d.trace || []).map((t, i) => stepHTML(t, (d.trace || []).length === 1 || i === 0)).join("");
   const top = (d.trace || []).map(t => t.tool).filter(Boolean);
-
   return `<div class="turn">
     <div class="q"><span class="who">you</span><span class="what">${esc(question)}</span></div>
     <div class="card">
@@ -628,7 +676,7 @@ async function renderGate(host) {
 
   if (!open.length) {
     wrap.innerHTML = `<div class="card gate">
-      <div class="card-head"><span class="badge" style="color:var(--accent)">approval gate</span>
+      <div class="card-head"><span class="tag">approval gate</span>
         <h3>${settled.length ? "Nothing pending" : "No action filed yet"}</h3></div>
       <div class="body">
         <div class="note">${settled.length
@@ -643,7 +691,7 @@ async function renderGate(host) {
     const a = open[0];
     wrap.innerHTML = `<div class="card gate">
       <div class="card-head">
-        <span class="badge" style="color:var(--accent)">approval gate</span>
+        <span class="tag">approval gate</span>
         <h3>${esc(a.action)} on ${esc(a.service)}</h3>
       </div>
       <div class="body">
@@ -712,11 +760,12 @@ async function run(id, tamper) {
   const d = await r.json();
   const note = $("gate-note");
   if (!note) return;
+  const steps = d.trace || [];
   note.innerHTML = `<div style="margin-top:12px">
     <span class="badge ${d.refused ? "no" : "yes"}">${esc(d.outcome.replace(/_/g, " "))}</span>
-    ${d.trace.facts.map(f => `<div style="margin-top:8px">${esc(f)}</div>`).join("")}
-    ${d.trace.conflicts.map(c => `<div class="flag" style="margin-top:8px">⚠ ${esc(c)}</div>`).join("")}
-    ${d.trace.missing_information.map(m => `<div class="missing" style="margin-top:8px">${esc(m)}</div>`).join("")}
+    ${steps.flatMap(t => t.facts).map(f => `<div style="margin-top:8px">${esc(f)}</div>`).join("")}
+    ${steps.flatMap(t => t.conflicts).map(c => `<div class="flag" style="margin-top:8px">⚠ ${esc(c)}</div>`).join("")}
+    ${steps.flatMap(t => t.missing_information).map(m => `<div class="missing" style="margin-top:8px">${esc(m)}</div>`).join("")}
   </div>`;
   toast(d.refused
     ? "The approval was void — the payload no longer matches what was approved."

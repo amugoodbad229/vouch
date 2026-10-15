@@ -238,19 +238,33 @@ def check(
     # Two ways to be grounded: the key came back as evidence, or it appeared as a
     # token in something the tool returned. The second is not a loophole -- the
     # token has to be literally present in text the agent was handed.
-    allowed = set(opened_keys(results)) | (mentioned(read_text(results)) & universe)
+    # No `& universe` on the second clause. The grounding condition is "the tool
+    # put this string in front of the model", not "this string happens to be a
+    # real key" -- and the difference between those two is exactly the refusal
+    # case, where the subject is by definition absent from the graph and the tool
+    # named it anyway. Intersecting with the universe made every "X is not in the
+    # graph" refusal report X as an invented identifier, which is the guard
+    # firing on the one sentence it must never fire on.
+    allowed = set(opened_keys(results)) | mentioned(read_text(results))
     named = mentioned(text)
     vocab = vocabulary(universe)
     unopened = sorted(n for n in named if n in universe and n not in allowed)
     invented = sorted(
         n for n in named if n not in universe and n not in allowed and set(n.split("-")) & vocab
     )
+    # A citation list means "this is what the sentence rests on", and a refusal
+    # rests on nothing -- it reports an absence. Without this a refusal that
+    # correctly listed the subjects the graph *does* have came back citing all of
+    # them, which reads as the opposite of what the sentence said.
+    answered = any(
+        r.outcome is Outcome.ANSWERED or r.outcome is Outcome.NO_RELATION for r in results
+    )
     return Verdict(
         ok=not unopened and not invented,
         # What the prose actually names, not everything that was opened. A tool can
         # read thirty nodes to answer one question; a citation list that reports all
         # thirty tells a reviewer nothing about what the sentence rests on.
-        citations=tuple(sorted(named & allowed)),
+        citations=tuple(sorted(named & allowed)) if answered else (),
         unopened=tuple(unopened),
         invented=tuple(invented),
     )

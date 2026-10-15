@@ -116,7 +116,9 @@ Rules, in order:
    - `no_relation`: this is an ANSWER, not a failure. The subject exists and the
      relationship does not. Say so plainly and say what you searched.
    - `missing_subject`: the thing asked about is not in this graph. Do not guess at
-     it. Say what is missing and, if the result lists candidates, mention them.
+     it, and do not recite the graph's other names -- the tool result already
+     carries the candidate list and the trace shows it. One sentence saying the
+     subject is not in the graph is the whole answer.
    - `missing_support`: the thing exists but nothing in the graph justifies the
      claim. Say that the evidence is missing. Do not reason your way to an answer.
 4. A `conflicts` entry is part of the answer. If declared ownership and observed

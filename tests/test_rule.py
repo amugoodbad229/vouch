@@ -70,8 +70,13 @@ def test_no_relation_is_an_answer_and_not_a_refusal() -> None:
     assert absent.outcome is Outcome.MISSING_SUBJECT
     assert absent.refused
     assert not absent.facts, "a refusal asserts nothing"
-    assert "payments-api" in absent.missing_information[0], (
-        "a refusal must name what the graph does contain, or the caller is back to guessing"
+    assert absent.data["candidates"] == ["payments-api"], (
+        "the candidate list must survive, or the caller is back to guessing"
+    )
+    assert "knows 1 name" in absent.missing_information[0], (
+        "the message states that a candidate list exists without carrying it: an "
+        "inlined list of twenty-three keys is what the model then recites on "
+        "screen, and a refusal is one sentence"
     )
 
 

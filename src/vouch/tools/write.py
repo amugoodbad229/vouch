@@ -113,7 +113,7 @@ async def request_action(
     """
     subject, known = await read._subject(client, tenant, service)
     if subject is None:
-        return ToolResult.missing_subject(service, candidates=known)
+        return ToolResult.missing_subject(service, candidates=known, what="service")
 
     # The action set is closed, and this is where it closes. An unrecognised action
     # has to be a refusal rather than a new action, because `ActionKind` is what the

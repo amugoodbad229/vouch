@@ -245,3 +245,48 @@ def test_verdict_serialises_into_the_wire_shape() -> None:
 )
 def test_key_shape_matches_the_identifiers_the_graph_actually_uses(text: str) -> None:
     assert mentioned(text), f"{text!r} should have been recognised as naming a key"
+
+
+def test_a_refusal_may_name_the_subject_it_could_not_find() -> None:
+    """The one sentence the guard must never fire on.
+
+    "X is not in the graph" is a refusal, and it necessarily names X. X is by
+    definition absent from the universe, so a guard that only trusts universe
+    membership calls the refusal a hallucination -- which is how a guard earns a
+    reputation for being wrong and gets switched off.
+    """
+    res = ToolResult.missing_subject(
+        "notification-service", candidates=sorted(ACME_KEYS), query="MATCH (s:Service)"
+    )
+    text = (
+        "The graph cannot support an answer: 'notification-service' is not in the "
+        "graph, so nothing can be said about it. The graph does contain: api-gateway, "
+        "audit-log, checkout-web."
+    )
+    verdict = check(text, [res], ACME_KEYS)
+    assert verdict.invented == ()
+    assert verdict.ok
+
+
+def test_a_refusal_cites_nothing() -> None:
+    """A refusal reports an absence, so there is nothing for it to rest on.
+
+    Without this, a refusal that helpfully listed the subjects the graph *does*
+    have came back citing every one of them -- the citation list saying "this is
+    what the sentence is based on" about the things the sentence just excluded.
+    """
+    res = ToolResult.missing_subject(
+        "notification-service", candidates=sorted(ACME_KEYS), query="MATCH (s:Service)"
+    )
+    text = "notification-service is not in the graph. It does contain payments-api and orders-api."
+    verdict = check(text, [res], ACME_KEYS)
+    assert verdict.citations == ()
+
+
+def test_an_answered_result_still_cites_what_it_names() -> None:
+    """The refusal rule above must not leak into answers."""
+    res = ToolResult.answered(
+        [Fact("orders-api calls payments-api.", (ORDERS, PAYMENTS))], opened=(PAYMENTS, ORDERS)
+    )
+    verdict = check("orders-api calls payments-api.", [res], ACME_KEYS)
+    assert verdict.citations == ("orders-api", "payments-api")

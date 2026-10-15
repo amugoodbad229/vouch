@@ -36,11 +36,19 @@ async def test_resolve_finds_the_one_real_key(client, acme) -> None:
 
 
 async def test_resolve_refuses_and_names_what_exists(client, acme) -> None:
-    """A refusal that lists the real keys is a next step, not a dead end."""
+    """A refusal that can list the real keys is a next step, not a dead end.
+
+    The list lives in `data`, not in the sentence. Inlining it made the model
+    recite all twenty-three keys as the answer to "is anything known about
+    X?", which is a refusal that reads like a directory dump.
+    """
     res = await read.resolve_service(client, acme, "nothing-here-at-all")
     assert res.outcome is Outcome.MISSING_SUBJECT
     assert res.refused
-    assert INCIDENT_SERVICE in res.missing_information[0]
+    candidates = res.data["candidates"]
+    assert INCIDENT_SERVICE in candidates
+    assert len(candidates) == 23
+    assert "knows 23 services" in res.missing_information[0]
 
 
 # -- 2. the three-way rule, on the three services planted for it
