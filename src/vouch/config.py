@@ -121,8 +121,6 @@ def checked_depth(depth: int) -> int:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
     falkordb_host: str = "127.0.0.1"
     falkordb_port: int = 6379
 
@@ -138,6 +136,17 @@ class Settings(BaseSettings):
 
     # The demo tenant. A second tenant, `beta`, exists to prove isolation.
     default_tenant: str = "acme"
+
+    # Where the approval ledger lives. SQLite because the gate needs to survive a
+    # restart and does not need to be a service; the file is gitignored.
+    ledger_path: str = ".artifacts/approvals.db"
+
+    # The real action adapter is used only when both of these are set, and
+    # `/api/health` reports which adapter is live so a mock run says so on screen.
+    issue_repo: str | None = None
+    github_token: str | None = None
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()

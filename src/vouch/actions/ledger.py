@@ -119,6 +119,12 @@ class Ledger:
 
     def __init__(self, path: str | Path = "vouch-ledger.sqlite3") -> None:
         self.path = str(path)
+        # A ledger that cannot be opened is worse than no ledger: the caller would
+        # get an `OperationalError` from sqlite rather than being told the gate is
+        # unavailable. Creating the directory makes the default path work on a
+        # fresh clone, and `:memory:` is passed through untouched for tests.
+        if self.path != ":memory:":
+            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.path, check_same_thread=False, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)

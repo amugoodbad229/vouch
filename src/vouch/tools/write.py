@@ -115,6 +115,20 @@ async def request_action(
     if subject is None:
         return ToolResult.missing_subject(service, candidates=known)
 
+    # The action set is closed, and this is where it closes. An unrecognised action
+    # has to be a refusal rather than a new action, because `ActionKind` is what the
+    # executor switches on and a value it does not recognise would otherwise reach
+    # the ledger as a string nobody validates.
+    try:
+        action = ActionKind(action)
+    except ValueError:
+        return ToolResult.missing_support(
+            f"{action!r} is not an action this system can take; the actions it can "
+            f"take are {', '.join(sorted(ActionKind))}",
+            needed="one of the three known actions",
+            opened=[subject],
+        )
+
     owner_res = await read.ownership(client, tenant, service)
     if owner_res.refused:
         return ToolResult.missing_support(
@@ -126,20 +140,36 @@ async def request_action(
 
     declared = owner_res.data.get("declared") or set()
     departed = owner_res.data.get("declared_owner_departed") or []
-    if not declared:
-        return ToolResult.missing_support(
-            f"{service} has no declared owner, so there is nobody whose authority "
-            "would make this action legitimate.",
-            needed="a declared owner (Team or Person) with an open OWNS period",
-            opened=[subject],
-        )
-    if departed:
-        return ToolResult.missing_support(
-            f"the declared owner of {service} has left the company, so the "
-            "declaration is not authority to act",
-            needed="ownership reassigned to someone currently employed",
-            conflicts=tuple(owner_res.conflicts),
-            opened=[subject],
+
+    # `flag_for_review` is the one action that is allowed to proceed without a
+    # current owner, because an unowned service is precisely what it exists to
+    # report. Refusing it would mean the system can notice that nobody is
+    # accountable and have no way to say so -- which is the failure mode this
+    # whole project is a response to. The two actions that *do* something to a
+    # service still need someone to be accountable for it, and the missing owner
+    # is carried into the payload rather than hidden.
+    escalation = action is ActionKind.FLAG_FOR_REVIEW
+    unresolved = ""
+    if not declared or departed:
+        if not escalation:
+            reason = (
+                f"the declared owner of {service} has left the company, so the "
+                "declaration is not authority to act"
+                if departed
+                else f"{service} has no declared owner, so there is nobody whose "
+                "authority would make this action legitimate."
+            )
+            return ToolResult.missing_support(
+                reason,
+                needed="a declared owner (Team or Person) with an open OWNS period",
+                conflicts=tuple(owner_res.conflicts),
+                opened=[subject],
+            )
+        unresolved = (
+            f"no current owner is recorded for {service}"
+            if not declared
+            else f"the declared owner {', '.join(sorted(departed and [str(d) for d in departed] or sorted(declared)))} "
+            "has left the company"
         )
 
     grounds_res = await read.decision_grounds(client, tenant, decision)
@@ -152,10 +182,10 @@ async def request_action(
         )
 
     grounds = list(grounds_res.data.get("current_support") or [])
-    owner = sorted(declared)[0]
+    owner = sorted(declared)[0] if declared else "UNRESOLVED"
     owner_kind = next(
         (str(r["kind"]) for r in owner_res.data.get("declared_all") or [] if r["key"] == owner),
-        "Team",
+        "Team" if declared else "None",
     )
 
     payload = _payload_for(
@@ -185,14 +215,27 @@ async def request_action(
             (subject,),
         ),
         Fact(
-            f"Authority: {owner_kind} {owner} is the declared owner of {service}. "
-            f"Grounds: decision {decision}, supported by {', '.join(grounds) or 'nothing current'}.",
+            (
+                f"Authority: nobody. {unresolved}, so this is a request for someone "
+                f"currently employed to take the service on, not a request to act on it."
+                if unresolved
+                else f"Authority: {owner_kind} {owner} is the declared owner of {service}."
+            )
+            + f" Grounds: decision {decision}, supported by "
+            + f"{', '.join(grounds) or 'nothing current'}.",
             tuple([subject, *[Evidence(key=g, label="Document", title=g) for g in grounds]]),
         ),
     ]
+    conflicts = list(owner_res.conflicts)
+    if unresolved:
+        conflicts.append(
+            f"this request proceeds with no accountable owner: {unresolved}, so a human "
+            "is approving a review rather than an execution"
+        )
 
     return ToolResult.answered(
         facts,
+        conflicts=tuple(conflicts),
         opened=[subject, *grounds_res.opened],
         data={
             "approval_id": approval.id,
@@ -201,6 +244,7 @@ async def request_action(
             "payload": approval.payload,
             "executed": False,
             "owner": owner,
+            "owner_unresolved": bool(unresolved),
             "grounds": grounds,
         },
         query="",

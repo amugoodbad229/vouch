@@ -415,3 +415,81 @@ async def test_history_shows_the_void_rather_than_hiding_it(client, acme, ledger
     assert res.data["status"] == "void"
     assert "payload changed" in res.data["note"]
     assert res.data["decided_by"] == "priya.raman"
+
+
+# -- escalation: the one action allowed to proceed without an owner -----------
+#
+# `flag_for_review` exists to report that nobody is accountable, so refusing it
+# when nobody is accountable would leave the system able to notice the problem and
+# unable to say so. The two actions that do something *to* a service still require
+# someone to be accountable for it.
+
+
+async def test_flag_for_review_proceeds_when_the_owner_has_left(client, acme, ledger):
+    """merchant-dashboard's declared owner departed; the review request still files."""
+    res = await write.request_action(
+        client,
+        ledger,
+        acme,
+        action=write.ActionKind.FLAG_FOR_REVIEW,
+        service="merchant-dashboard",
+        title="Ownership review: merchant-dashboard",
+        body="The declared owner has departed and no replacement is recorded.",
+        decision="dec-psp-v4",
+    )
+    assert res.answered, res.missing_information
+    assert res.data["owner_unresolved"] is True
+    assert res.data["owner"] == "nadia.farouk", (
+        "the departed owner is still what the graph declares"
+    )
+    assert any("no accountable owner" in c for c in res.conflicts)
+    assert "NOT run" in res.facts[0].statement
+
+
+async def test_flag_for_review_proceeds_when_there_is_no_owner_at_all(client, acme, ledger):
+    res = await write.request_action(
+        client,
+        ledger,
+        acme,
+        action="flag_for_review",
+        service="audit-log",
+        title="Nobody owns audit-log",
+        body="No OWNS relationship is recorded for this service.",
+        decision="dec-psp-v4",
+    )
+    assert res.answered, res.missing_information
+    assert res.data["owner"] == "UNRESOLVED"
+    assert "nobody" in res.facts[1].statement.lower()
+
+
+async def test_open_issue_still_refuses_without_an_owner(client, acme, ledger):
+    """The escalation is narrow on purpose: acting *on* an unowned service is still refused."""
+    res = await write.request_action(
+        client,
+        ledger,
+        acme,
+        action="open_issue",
+        service="merchant-dashboard",
+        title="Fix it",
+        body="...",
+        decision="dec-psp-v4",
+    )
+    assert res.refused
+    assert "left the company" in res.missing_information[0]
+
+
+async def test_an_unknown_action_is_refused_not_stored(client, acme, ledger):
+    """The action set is closed at the boundary, so an unknown one cannot reach the executor."""
+    res = await write.request_action(
+        client,
+        ledger,
+        acme,
+        action="deploy_to_production",
+        service="payments-api",
+        title="...",
+        body="...",
+        decision="dec-psp-v4",
+    )
+    assert res.refused
+    assert "flag_for_review" in res.missing_information[0], "the refusal names what it can do"
+    assert ledger.for_tenant("acme") == [], "a refused request leaves no approval behind"

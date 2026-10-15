@@ -227,13 +227,14 @@ def build_agent(model: Model | None = None) -> Agent[Session, str]:
         service: str,
         title: str,
         body: str,
-        decision: str | None = None,
+        decision: str,
     ) -> str:
         """File a request for a human to act on a service. action is one of
-        open_issue, page_owner or flag_for_review. This does NOT perform the action:
-        it creates a pending approval that a named person must grant, bound to the
-        exact content of the request. Prefer this over telling the user to do
-        something manually."""
+        open_issue, page_owner or flag_for_review. `decision` is mandatory: the
+        key of the recorded decision that justifies the action, and the request is
+        refused if that decision has no current supporting document. This does NOT
+        perform the action -- it creates a pending approval that a named person must
+        grant, bound to the exact content of the request."""
         return await _run(
             ctx,
             W.request_action(
