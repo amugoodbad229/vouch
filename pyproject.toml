@@ -1,0 +1,46 @@
+[project]
+name = "vouch"
+version = "0.1.0"
+description = "Who really owns this? An agent that answers from a time-versioned ownership graph, and refuses when the graph cannot support the answer."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "falkordb>=1.4.0",
+    "redis>=5.2",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.7",
+    "pydantic-ai-slim[openai,anthropic]>=1.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "httpx>=0.28",
+    "rapidfuzz>=3.11",
+    "rich>=13.9",
+]
+
+[project.scripts]
+vouch = "vouch.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
