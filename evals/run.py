@@ -262,7 +262,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  problem: {problem}", file=sys.stderr)  # noqa: T201
         return 1
 
-    result = asyncio.run(run_all(args))
+    try:
+        result = asyncio.run(run_all(args))
+    except cond.BudgetExhausted as exc:
+        # No results file is written: a partial run that stops at the provider's daily cap is
+        # not a measurement, and leaving a results.json behind would let it be read as one.
+        print(  # noqa: T201
+            "\nABORTED: the model provider ran out of budget, so the eval measured nothing "
+            "beyond the cases already printed above.\n"
+            f"{exc}\n\n"
+            "No results file was written. Wait for the provider's budget to reset, then "
+            "re-run. To measure without the answering model, use --conditions C (condition C "
+            "still needs the model, but only one call per case).",
+            file=sys.stderr,
+        )
+        return 3
     out_dir = Path(args.out) if args.out else None
     json_path, md_path = report_mod.write_report(result, out_dir)
     print()  # noqa: T201

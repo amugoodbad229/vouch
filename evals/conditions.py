@@ -19,9 +19,10 @@ instruction cannot change what C is scored on.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable, TypeVar
 
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
@@ -43,7 +44,7 @@ from evals.types import (
 from vouch.actions.adapters import MockAdapter
 from vouch.actions.ledger import Ledger
 from vouch.agent.core import ask, build_agent, build_model, make_session
-from vouch.config import Settings
+from vouch.config import Outcome, Settings
 from vouch.graph.client import GraphClient, Tenant
 from vouch.tools import write
 from vouch.tools.contract import ToolResult
@@ -103,6 +104,11 @@ def delivered_class(guarded: Any, results: tuple[ToolResult, ...]) -> str:
     This mirrors ``agent/guard.py``'s ``enforce()`` exactly, minus that function's collapse
     of every refusal onto the single ``missing_support`` badge.
     """
+    if any(
+        result.outcome in (Outcome.ENGINE_UNAVAILABLE, Outcome.MODEL_UNAVAILABLE)
+        for result in results
+    ):
+        return ERROR
     usable = [result for result in results if result.outcome.value in (ANSWERED, NO_RELATION)]
     if usable:
         return usable[-1].outcome.value
@@ -120,8 +126,50 @@ def stated_class(text: str) -> str | None:
     return candidate if candidate in CLASSES else None
 
 
+class BudgetExhausted(RuntimeError):
+    """The provider's daily budget for this key is gone, so nothing can be measured.
+
+    Raised rather than retried: waiting out a daily cap would turn a five-minute harness
+    into a multi-hour one that measures nothing.  The runner aborts and says so.
+    """
+
+
+T = TypeVar("T")
+
+_HINT = re.compile(r"try again in\s*(?:(\d+)\s*m(?:in)?\s*)?([\d.]+)\s*s", re.IGNORECASE)
+_DAILY = re.compile(r"per day|tokens per day|\bTPD\b", re.IGNORECASE)
+
+
+def _is_rate_limit(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return "ratelimit" in type(exc).__name__.lower() or "429" in text or "rate limit" in text
+
+
+async def _with_retry(call: Callable[[], Awaitable[T]], *, attempts: int = 4) -> T:
+    """Wait out a *short* rate limit; abort the run on a daily one.
+
+    A transient 429 must not become an ``error`` row that silently shrinks the sample, and
+    a per-day 429 must not become a retry loop.  Anything that is not a rate limit is
+    re-raised untouched, so a real bug still surfaces.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return await call()
+        except Exception as exc:  # noqa: BLE001 - only rate limits are swallowed
+            if not _is_rate_limit(exc):
+                raise
+            hint = _HINT.search(str(exc))
+            wait = (int(hint.group(1) or 0) * 60 + float(hint.group(2))) if hint else 0.0
+            if _DAILY.search(str(exc)) or wait > 45 or attempt == attempts:
+                raise BudgetExhausted(
+                    "the provider is rate limiting this key: " + str(exc).strip()[-400:]
+                ) from exc
+            await asyncio.sleep(max(wait, 2.0) + 1.0)
+    raise AssertionError("unreachable")
+
+
 async def _plain_answer(agent: Agent[Any, str], user_prompt: str) -> tuple[str, int, int]:
-    result = await agent.run(user_prompt)
+    result = await _with_retry(lambda: agent.run(user_prompt))
     usage = result.usage
     return str(result.output), int(usage.input_tokens or 0), int(usage.output_tokens or 0)
 
@@ -140,6 +188,8 @@ async def condition_a(agent: Agent[Any, str], case: Case, run: int, options: Opt
     prompt = f"QUESTION: {case.question}\n\n{OUTCOME_HINT}"
     try:
         text, tokens_in, tokens_out = await _plain_answer(agent, prompt)
+    except BudgetExhausted:
+        raise
     except Exception as exc:  # noqa: BLE001 - one bad call must not end the run
         return Answer(case.id, case.track, "A", run, ERROR, error=f"{type(exc).__name__}: {exc}")
     return Answer(
@@ -179,6 +229,8 @@ async def condition_b(
     )
     try:
         text, tokens_in, tokens_out = await _plain_answer(agent, prompt)
+    except BudgetExhausted:
+        raise
     except Exception as exc:  # noqa: BLE001
         return Answer(case.id, case.track, "B", run, ERROR, error=f"{type(exc).__name__}: {exc}")
     return Answer(
@@ -314,7 +366,11 @@ async def condition_c_query(
     try:
         session = make_session(client, ACME, ledger, adapter=MockAdapter())
         try:
-            guarded = await ask(case.question, session=session, agent=agents["agent"])
+            guarded = await _with_retry(
+                lambda: ask(case.question, session=session, agent=agents["agent"])
+            )
+        except BudgetExhausted:
+            raise
         except Exception as exc:  # noqa: BLE001
             return Answer(
                 case.id,
