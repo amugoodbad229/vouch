@@ -504,14 +504,15 @@ _DOCS: tuple[tuple[str, str, str, str, date, int], ...] = (
     ),
 )
 
-_DECISIONS: tuple[tuple[str, str, date, str, tuple[str, ...]], ...] = (
-    # key, title, decided_at, status, supporting documents
+_DECISIONS: tuple[tuple[str, str, date, str, tuple[str, ...], tuple[str, ...]], ...] = (
+    # key, title, decided_at, status, supporting documents, services it governs
     (
         "dec-split-payments",
         "Split payments-api out of the monolith",
         date(2025, 11, 10),
         "implemented",
         ("doc-payments-split",),
+        ("payments-api", "psp-connector"),
     ),
     (
         "dec-psp-v3",
@@ -519,6 +520,7 @@ _DECISIONS: tuple[tuple[str, str, date, str, tuple[str, ...]], ...] = (
         date(2026, 1, 28),
         "superseded",
         (SUPERSEDED_DOC,),
+        ("psp-connector", "payments-api"),
     ),
     (
         "dec-psp-v4",
@@ -526,6 +528,7 @@ _DECISIONS: tuple[tuple[str, str, date, str, tuple[str, ...]], ...] = (
         date(2026, 6, 20),
         "accepted",
         ("doc-psp-v4", "doc-incident-2026-07-payments"),
+        ("psp-connector", "payments-api"),
     ),
     (
         "dec-merchant-owner",
@@ -533,6 +536,7 @@ _DECISIONS: tuple[tuple[str, str, date, str, tuple[str, ...]], ...] = (
         date(2025, 5, 22),
         "accepted",
         ("doc-merchant-dashboard-adr",),
+        (FAR_SERVICE,),
     ),
     (
         "dec-risk-model",
@@ -540,6 +544,7 @@ _DECISIONS: tuple[tuple[str, str, date, str, tuple[str, ...]], ...] = (
         date(2025, 2, 5),
         "implemented",
         ("doc-risk-model-rollout",),
+        ("risk-model-svc", "fraud-scorer"),
     ),
     (
         "dec-soap-retire",
@@ -547,15 +552,19 @@ _DECISIONS: tuple[tuple[str, str, date, str, tuple[str, ...]], ...] = (
         date(2025, 10, 2),
         "proposed",
         ("doc-soap-bridge-deprecation",),
+        ("legacy-soap-bridge", "partner-portal"),
     ),
-    # Deliberately unsupported: a real decision with no document behind it.
-    # Asking for its grounds must refuse, not narrate.
+    # Deliberately unsupported: a real decision with no document behind it, and it
+    # governs real services. Asking for its grounds must refuse, and asking which
+    # decisions govern those services must report the gap as a conflict rather than
+    # return it as an equally-grounded fact.
     (
         UNSUPPORTED_DECISION,
         "Move all platform teams onto a single on-call rotation",
         date(2026, 2, 18),
         "proposed",
         (),
+        ("inventory-api", "warehouse-sync"),
     ),
 )
 
@@ -798,8 +807,15 @@ _INCIDENTS: tuple[tuple[str, str, str, date, date, str, tuple[str, ...]], ...] =
     ),
 )
 
-_CLAIMS: tuple[tuple[str, str, str, str, date, date | None, str, str], ...] = (
-    # key, statement, about_service, learned_in_episode, valid_from, valid_to, status, source_doc
+#: Where a belief came from, weakest argument last. An ownership claim scraped off a
+#: chat thread and one read out of CODEOWNERS are not the same kind of fact, and a
+#: graph that stores both as "a Claim" has thrown away the only part that decides
+#: which one to act on.
+CLAIM_TIERS: tuple[str, ...] = ("codeowners", "registry", "document", "chat")
+
+_CLAIMS: tuple[tuple[str, str, str, str, date, date | None, str, str, str], ...] = (
+    # key, statement, about_service, learned_in_episode, valid_from, valid_to,
+    # status, source_doc, source_tier
     (
         "claim-psp-ceiling",
         "payments-api throughput is capped at 40 rps by the PSP v3 rate limiter",
@@ -809,6 +825,7 @@ _CLAIMS: tuple[tuple[str, str, str, str, date, date | None, str, str], ...] = (
         date(2026, 6, 14),
         "invalidated",
         SUPERSEDED_DOC,
+        "document",
     ),
     (
         # The other half of the contradiction. This claim is what invalidates
@@ -824,6 +841,7 @@ _CLAIMS: tuple[tuple[str, str, str, str, date, date | None, str, str], ...] = (
         None,
         "active",
         "doc-psp-v4",
+        "document",
     ),
     (
         "claim-connector-owner",
@@ -834,8 +852,12 @@ _CLAIMS: tuple[tuple[str, str, str, str, date, date | None, str, str], ...] = (
         None,
         "active",
         "doc-payments-split",
+        "codeowners",
     ),
     (
+        # Deliberately the weakest tier, and deliberately about ownership, so that
+        # "who owns merchant-dashboard" has two answers of unequal authority and the
+        # graph can say which one wins instead of returning both as equal facts.
         "claim-dashboard-owner",
         "Merchant Dashboard is owned by Growth",
         FAR_SERVICE,
@@ -844,6 +866,7 @@ _CLAIMS: tuple[tuple[str, str, str, str, date, date | None, str, str], ...] = (
         None,
         "active",
         "doc-merchant-dashboard-adr",
+        "chat",
     ),
     (
         "claim-ledger-immutable",
@@ -854,11 +877,30 @@ _CLAIMS: tuple[tuple[str, str, str, str, date, date | None, str, str], ...] = (
         None,
         "active",
         "doc-ledger-retention",
+        "codeowners",
+    ),
+    (
+        # Expired, and nothing contradicts it. The distinction between "stopped
+        # being true" and "was replaced" is the difference between an answer that
+        # names a successor and one that admits the record just ran out.
+        "claim-dashboard-latency",
+        "Merchant Dashboard carries a 400ms p95 latency budget",
+        FAR_SERVICE,
+        "ep-2026-09-22-review",
+        date(2025, 6, 1),
+        date(2026, 1, 1),
+        "expired",
+        "doc-merchant-dashboard-adr",
+        "document",
     ),
 )
 
-_EPISODES: tuple[tuple[str, str, str, date], ...] = (
-    # key, session, summary, started_at
+_EPISODES: tuple[tuple[str, str, str, date, int], ...] = (
+    # key, session, summary, started_at, revision
+    #
+    # `revision` exists so that a second writer to the same episode is visible as
+    # a second revision rather than as a silent overwrite. An episode with no
+    # revision number cannot be lost-updated detectably.
     (
         "ep-2026-07-11-triage",
         "incident-triage",
@@ -866,6 +908,7 @@ _EPISODES: tuple[tuple[str, str, str, date], ...] = (
         "confirmed the payments-api deployment was not the cause, and opened "
         "the v4 migration as the fix.",
         date(2026, 7, 11),
+        1,
     ),
     (
         "ep-2026-09-22-review",
@@ -874,6 +917,7 @@ _EPISODES: tuple[tuple[str, str, str, date], ...] = (
         "entry points at a person who left in March and that Data Platform has "
         "been shipping its changes.",
         date(2026, 9, 22),
+        1,
     ),
     (
         "ep-2026-08-20-postmortem",
@@ -881,29 +925,49 @@ _EPISODES: tuple[tuple[str, str, str, date], ...] = (
         "Postmortem for duplicate settlement entries. Root cause was retries "
         "without idempotency keys.",
         date(2026, 8, 20),
+        2,
     ),
 )
 
-_PROCEDURES: tuple[tuple[str, str, str], ...] = (
+#: A procedure is only evidence about how to act if a human has passed it. The
+#: `candidate` one exists so that "apply what worked last time" can be *refused*
+#: rather than quietly honoured, which is the difference between a memory and a
+#: rumour with a steps list.
+PROCEDURE_STATES: tuple[str, ...] = ("reviewed", "candidate")
+
+_PROCEDURES: tuple[tuple[str, str, str, str, str], ...] = (
+    # key, title, steps, status, service
     (
         "proc-payments-oncall",
         "Payments on-call triage",
         "1. Check psp-connector error rate. 2. Check PSP status page. 3. If rate-limited, page Payments Core.",
+        "reviewed",
+        "payments-api",
     ),
     (
         "proc-ledger-reconcile",
         "Ledger reconciliation",
         "1. Freeze writes. 2. Diff ledger against PSP settlement file. 3. Post correction entries.",
+        "reviewed",
+        "ledger-service",
     ),
     (
         "proc-events-failover",
         "Event bus failover",
         "1. Page platform rotation. 2. Drain consumer groups. 3. Flip primary.",
+        "candidate",
+        "event-bus",
     ),
 )
 
-_HANDOFFS: tuple[tuple[str, str, str, datetime, int, str], ...] = (
-    # key, from_agent, to_agent, created_at, graph_revision, note
+_HANDOFFS: tuple[tuple[str, str, str, datetime, int, str, str, str], ...] = (
+    # key, from_agent, to_agent, created_at, graph_revision, note, about_service,
+    # receiving_team
+    #
+    # A handoff carries the graph revision it was written against. That is the
+    # whole difference between "the next session continues this" and "the next
+    # session re-derives it from a graph that has since moved" -- if the revision
+    # on the handoff is behind the graph, continuing it is continuing stale work.
     (
         "hnd-001",
         "triage-agent",
@@ -912,6 +976,8 @@ _HANDOFFS: tuple[tuple[str, str, str, datetime, int, str], ...] = (
         41,
         "payments-api incident triaged. Proposed change: raise connector pool "
         "size again. Needs a change reviewer.",
+        "payments-api",
+        "payments",
     ),
     (
         "hnd-002",
@@ -921,6 +987,21 @@ _HANDOFFS: tuple[tuple[str, str, str, datetime, int, str], ...] = (
         43,
         "Revised payload after the reviewer rejected a stale handoff. Same "
         "incident, corrected evidence set.",
+        "psp-connector",
+        "payments",
+    ),
+    (
+        # Exists, belongs to somebody, and says nothing. A handoff that carries no
+        # note is not a handoff, and the correct answer is to say so rather than
+        # to relay an empty message confidently onward.
+        "hnd-003",
+        "triage-agent",
+        "change-review-agent",
+        datetime(2026, 10, 15, 4, 5),
+        44,
+        "",
+        "inventory-api",
+        "data-platform",
     ),
 )
 
@@ -975,10 +1056,16 @@ def acme() -> TenantSpec:
     # The supersession that invalidates a claim without deleting it.
     b.edge(Label.DOCUMENT, Rel.SUPERSEDES, Label.DOCUMENT, "doc-psp-v4", SUPERSEDED_DOC)
 
-    for key, title, decided_at, status, docs in _DECISIONS:
+    for key, title, decided_at, status, docs, services in _DECISIONS:
         b.node(Label.DECISION, key, title=title, decided_at=_iso(decided_at), status=status)
         for doc in docs:
             b.edge(Label.DECISION, Rel.SUPPORTS, Label.DOCUMENT, key, doc)
+        # An edge, not a text search. Matching a decision to a service by looking
+        # for the service name inside a document body finds whatever happens to
+        # mention it, which is exactly the plausible-but-ungrounded answer this
+        # project refuses to give.
+        for service in services:
+            b.edge(Label.DECISION, Rel.AFFECTS, Label.SERVICE, key, service)
 
     for key, summary, service, merged_at, author, lines in _CHANGES:
         b.node(Label.CHANGE, key, summary=summary, merged_at=_iso(merged_at), lines=lines)
@@ -999,15 +1086,23 @@ def acme() -> TenantSpec:
         for service in services:
             b.edge(Label.INCIDENT, Rel.AFFECTS, Label.SERVICE, key, service)
 
-    for key, session, summary, started in _EPISODES:
-        b.node(Label.EPISODE, key, session=session, summary=summary, started_at=_iso(started))
+    for key, session, summary, started, revision in _EPISODES:
+        b.node(
+            Label.EPISODE,
+            key,
+            session=session,
+            summary=summary,
+            started_at=_iso(started),
+            revision=revision,
+        )
 
-    for key, statement, service, episode, valid_from, valid_to, status, doc in _CLAIMS:
+    for key, statement, service, episode, valid_from, valid_to, status, doc, tier in _CLAIMS:
         b.node(
             Label.CLAIM,
             key,
             statement=statement,
             status=status,
+            source_tier=tier,
             valid_from=_iso(valid_from),
             valid_to=_iso(valid_to) if valid_to else None,
         )
@@ -1018,10 +1113,11 @@ def acme() -> TenantSpec:
     # The invalidation, stated as a fact rather than as a deletion.
     b.edge(Label.CLAIM, Rel.CONTRADICTS, Label.CLAIM, "claim-psp-v4-nocap", "claim-psp-ceiling")
 
-    for key, title, steps in _PROCEDURES:
-        b.node(Label.PROCEDURE, key, title=title, steps=steps)
+    for key, title, steps, status, service in _PROCEDURES:
+        b.node(Label.PROCEDURE, key, title=title, steps=steps, status=status)
+        b.edge(Label.PROCEDURE, Rel.ABOUT, Label.SERVICE, key, service)
 
-    for key, frm, to, created, revision, note in _HANDOFFS:
+    for key, frm, to, created, revision, note, service, team in _HANDOFFS:
         b.node(
             Label.HANDOFF,
             key,
@@ -1031,6 +1127,8 @@ def acme() -> TenantSpec:
             from_agent=frm,
             to_agent=to,
         )
+        b.edge(Label.HANDOFF, Rel.ABOUT, Label.SERVICE, key, service)
+        b.edge(Label.HANDOFF, Rel.HANDED_TO, Label.TEAM, key, team)
 
     return TenantSpec("acme", tuple(b.nodes), tuple(b.edges))
 

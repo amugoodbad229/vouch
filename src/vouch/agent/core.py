@@ -246,6 +246,33 @@ def build_agent(model: Model | None = None) -> Agent[Session, str]:
         return await _run(ctx, R.contradictions(ctx.deps.client, ctx.deps.tenant, service=service))
 
     @agent.tool
+    async def recall_episodes(ctx: RunContext[Session], service: str | None = None) -> str:
+        """What previous sessions learned about a service, and the revision they wrote
+        it at. Call this before a traversal when the question asks what is known, or
+        when an earlier session may already have reached a conclusion."""
+        return await _run(ctx, R.recall_episodes(ctx.deps.client, ctx.deps.tenant, service=service))
+
+    @agent.tool
+    async def handoff_detail(ctx: RunContext[Session], handoff: str) -> str:
+        """Read one handoff: what the previous session passed on, what it is about, and
+        which graph revision it was written against. Takes a handoff key such as
+        hnd-001. Refuses when the handoff carries no note."""
+        return await _run(ctx, R.handoff_detail(ctx.deps.client, ctx.deps.tenant, handoff=handoff))
+
+    @agent.tool
+    async def procedure_for(ctx: RunContext[Session], service: str) -> str:
+        """The procedure a human has reviewed for a service. Refuses when the only
+        procedure on record is still a candidate, because an unreviewed procedure is
+        not evidence about how to act."""
+        return await _run(ctx, R.procedure_for(ctx.deps.client, ctx.deps.tenant, service=service))
+
+    @agent.tool
+    async def decisions_for(ctx: RunContext[Session], service: str) -> str:
+        """Which decisions govern a service. Returns no_relation when none do, which is
+        a real answer about the company rather than a failure to look it up."""
+        return await _run(ctx, R.decisions_for(ctx.deps.client, ctx.deps.tenant, service=service))
+
+    @agent.tool
     async def request_action(
         ctx: RunContext[Session],
         action: str,

@@ -59,7 +59,7 @@ the seed changes the expectations change with it.
 |---|---|---|
 | **A** | LLM only | the question. No tools, no retrieval. |
 | **B** | keyword RAG | the question plus the top-5 chunks of the *same* corpus flattened to text, inside a budget of `--context-chars`. |
-| **C** | the project | the question answered through the ten typed read tools, the agent loop, the citation guard, a real approval ledger and a `MockAdapter`. |
+| **C** | the project | the question answered through the fourteen typed read tools, the agent loop, the citation guard, a real approval ledger and a `MockAdapter`. |
 
 Fairness, as `docs/EVAL.md` requires:
 

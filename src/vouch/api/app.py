@@ -258,7 +258,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 body=body.body,
                 decision=body.decision,
             )
-        return {"outcome": result.outcome.value, "trace": [_trace(result)], "refused": result.refused}
+        return {
+            "outcome": result.outcome.value,
+            "trace": [_trace(result)],
+            "refused": result.refused,
+        }
 
     @app.post("/api/approvals/{approval_id}/decide")
     async def decide(approval_id: str, body: DecideBody) -> dict[str, Any]:
@@ -272,7 +276,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except LedgerError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"outcome": result.outcome.value, "trace": [_trace(result)], "refused": result.refused}
+        return {
+            "outcome": result.outcome.value,
+            "trace": [_trace(result)],
+            "refused": result.refused,
+        }
 
     @app.post("/api/approvals/{approval_id}/execute")
     async def execute(approval_id: str, body: ExecuteBody) -> dict[str, Any]:

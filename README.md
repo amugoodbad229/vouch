@@ -1,6 +1,10 @@
+<img src="web/logo.svg" alt="Vouch" width="72" align="left" hspace="16" vspace="4">
+
 # Vouch
 
 **Who really owns this?**
+
+<br clear="left">
 
 An agent that answers ownership, dependency and decision questions from a
 time-versioned graph in FalkorDB — and refuses when the graph cannot support an
@@ -254,14 +258,14 @@ declared owner, and which service nobody owns at all.
 ```
 src/vouch/config.py        closed vocabulary, four-outcome enum, the checked depth set
 src/vouch/graph/           connection pool, tenant routing, schema bootstrap, query shapes
-src/vouch/tools/           ten typed read tools + the write path, one evidence envelope each
+src/vouch/tools/           fourteen typed read tools + the write path, one evidence envelope each
 src/vouch/actions/         the approval ledger (SQLite) and the executor adapters
 src/vouch/agent/           the model loop, and the sentence-level citation guard
 src/vouch/api/             FastAPI: /api/ask, /api/graph, /api/approvals
 src/vouch/seed/            synthetic Acme Cloud, written backwards from the refusals
 web/                       one page, three tabs, Cytoscape graph
 evals/                     the case list and the runner
-tests/                     91 tests; the pure ones run without a database
+tests/                     107 tests; the pure ones run without a database
 ```
 
 Pinned to FalkorDB **v4.22.0**. Not a floating tag: the same graph on two releases

@@ -337,3 +337,111 @@ async def test_tenants_do_not_see_each_other(client, acme, beta) -> None:
     assert a.data["declared"] == {"payments"}
     assert b.data["declared"] == {"beta-payments"}
     assert not a.data["declared"] & b.data["declared"]
+
+
+# -- 11. memory and coordination reach the nodes that were seeded for them
+
+
+async def test_episodes_are_reachable_from_a_service(client, acme) -> None:
+    """Seeded memory is worthless if no tool reads it."""
+    res = await read.recall_episodes(client, acme, service=INCIDENT_SERVICE)
+    assert res.outcome is Outcome.ANSWERED
+    assert {e["key"] for e in res.data["episodes"]} == {"ep-2026-07-11-triage"}
+    assert res.data["episodes"][0]["revision"] == 1
+
+
+async def test_a_service_no_episode_mentions_is_an_answer(client, acme) -> None:
+    res = await read.recall_episodes(client, acme, service=UNOWNED_SERVICE)
+    assert res.outcome is Outcome.NO_RELATION
+    assert not res.refused
+
+
+async def test_an_episode_recall_can_be_asked_without_a_subject(client, acme) -> None:
+    res = await read.recall_episodes(client, acme)
+    assert res.outcome is Outcome.ANSWERED
+    assert len(res.data["episodes"]) == 3
+
+
+async def test_a_handoff_reports_what_it_carries_and_the_revision(client, acme) -> None:
+    res = await read.handoff_detail(client, acme, handoff="hnd-001")
+    assert res.outcome is Outcome.ANSWERED
+    assert res.data["handoff"]["graph_revision"] == 41
+    assert res.data["handoff"]["service"] == INCIDENT_SERVICE
+    assert res.data["handoff"]["team_name"] == "Payments Core"
+
+
+async def test_a_handoff_with_no_note_is_refused_not_relayed(client, acme) -> None:
+    """An empty handoff is not a handoff.
+
+    The failure worth preventing is a second session confidently continuing a
+    message that says nothing, which is indistinguishable from having no memory
+    at all except that it looks like having some.
+    """
+    res = await read.handoff_detail(client, acme, handoff="hnd-003")
+    assert res.outcome is Outcome.MISSING_SUPPORT
+    assert res.refused
+    assert "no note" in res.missing_information[0]
+
+
+async def test_an_unknown_handoff_names_the_real_ones(client, acme) -> None:
+    res = await read.handoff_detail(client, acme, handoff="hnd-999")
+    assert res.outcome is Outcome.MISSING_SUBJECT
+    assert res.data["candidates"] == ["hnd-001", "hnd-002", "hnd-003"]
+
+
+async def test_a_reviewed_procedure_is_returned_with_its_steps(client, acme) -> None:
+    res = await read.procedure_for(client, acme, service=INCIDENT_SERVICE)
+    assert res.outcome is Outcome.ANSWERED
+    assert "psp-connector error rate" in res.facts[0].statement
+
+
+async def test_an_unreviewed_procedure_is_refused(client, acme) -> None:
+    """`candidate` means proposed and never passed, so it is not instructions."""
+    res = await read.procedure_for(client, acme, service="event-bus")
+    assert res.outcome is Outcome.MISSING_SUPPORT
+    assert res.refused
+    assert "candidate" in res.missing_information[0]
+
+
+async def test_a_service_with_no_procedure_says_so(client, acme) -> None:
+    res = await read.procedure_for(client, acme, service=UNOWNED_SERVICE)
+    assert res.outcome is Outcome.NO_RELATION
+    assert not res.refused
+
+
+async def test_decisions_governing_a_service_are_found_by_edge(client, acme) -> None:
+    res = await read.decisions_for(client, acme, service=INCIDENT_SERVICE)
+    assert res.outcome is Outcome.ANSWERED
+    keys = {d["key"] for d in res.data["decisions"]}
+    assert {"dec-psp-v4", "dec-psp-v3", "dec-split-payments"} <= keys
+
+
+async def test_a_service_no_decision_governs_is_a_positive_answer(client, acme) -> None:
+    """The middle row of the emptiness rule, applied to the decision record.
+
+    "Nothing governs this" is a finding about the company. Refusing here would be
+    safe and useless, and would signal a system that cannot tell the rows apart.
+    """
+    res = await read.decisions_for(client, acme, service="orders-api")
+    assert res.outcome is Outcome.NO_RELATION
+    assert not res.refused
+    assert res.data["decisions"] == []
+
+
+async def test_decisions_for_an_absent_service_refuses(client, acme) -> None:
+    res = await read.decisions_for(client, acme, service=ABSENT_SERVICE)
+    assert res.outcome is Outcome.MISSING_SUBJECT
+    assert res.refused
+
+
+async def test_a_decision_with_no_grounds_is_a_conflict_where_it_governs(client, acme) -> None:
+    """An ungrounded decision that governs a real service is reported as a conflict.
+
+    `dec-org-restructure` has no supporting document, so asking for its grounds
+    refuses. It is still recorded as governing two services, and asking about
+    those must surface the gap instead of returning it as a grounded fact.
+    """
+    res = await read.decisions_for(client, acme, service="inventory-api")
+    assert res.outcome is Outcome.ANSWERED
+    assert any(UNSUPPORTED_DECISION in c for c in res.conflicts)
+    assert any("no document is recorded" in c for c in res.conflicts)

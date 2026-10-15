@@ -168,7 +168,9 @@ async def blast_radius(
     """
     subject, known = await _subject(client, tenant, service)
     if subject is None:
-        return ToolResult.missing_subject(service, candidates=known, what="service", query=q.blast_radius(depth))
+        return ToolResult.missing_subject(
+            service, candidates=known, what="service", query=q.blast_radius(depth)
+        )
 
     query = q.blast_radius(depth)
     res = await client.read(tenant, query, {"service": service})
@@ -964,4 +966,265 @@ async def contradictions(
             ],
         },
         query=q.CONTRADICTIONS,
+    )
+
+
+# -- memory and coordination ----------------------------------------------
+#
+# The four tools below read the nodes a multi-session agent actually leaves
+# behind: what it learned, what it was told to continue, and what a human has
+# vouched for. They exist because those nodes were seeded and unreachable, which
+# is worse than not having them at all -- a graph that stores coordination and
+# never reads it cannot tell a handoff from a rumour.
+
+
+async def recall_episodes(
+    client: GraphClient,
+    tenant: Tenant,
+    *,
+    service: str | None = None,
+) -> ToolResult:
+    """What past sessions learned about a service, with the revision they wrote.
+
+    An episode is a session's memory made durable. Reading it before a traversal
+    is what stops the next session re-deriving a conclusion the last one already
+    reached and wrote down.
+    """
+    query = q.RECENT_EPISODES if service is None else q.EPISODES_TOUCHING_SERVICE
+    scope = "this tenant"
+    if service is None:
+        res = await client.read(tenant, query, {"limit": 20})
+    else:
+        subject, known = await _subject(client, tenant, service)
+        if subject is None:
+            return ToolResult.missing_subject(service, candidates=known, what="service")
+        scope = service
+        res = await client.read(tenant, query, {"service": service})
+
+    rows = [dict(zip(res.columns, r, strict=True)) for r in res.rows]
+    if not rows:
+        anchor = Evidence(
+            key=f"tenant:{tenant.name}", label="Episode", title=f"tenant {tenant.name}"
+        )
+        if service is not None:
+            found, _ = await _subject(client, tenant, service)
+            anchor = found or anchor
+        return ToolResult.no_relation(
+            f"No episode records anything learned about {scope}.",
+            subject=anchor,
+            data={"service": service, "episodes": []},
+            query=query,
+        )
+
+    facts: list[Fact] = []
+    opened: list[Evidence] = []
+    for row in rows:
+        ev = Evidence(
+            key=str(row["key"]),
+            label="Episode",
+            title=f"{row['session']} — revision {row['revision']}",
+        )
+        opened.append(ev)
+        facts.append(Fact(f"{row['summary']} (recorded {row['started_at']}).", (ev,)))
+
+    return ToolResult.answered(
+        facts,
+        opened=opened,
+        data={
+            "service": service,
+            "episodes": [
+                {
+                    "key": str(r["key"]),
+                    "session": str(r["session"]),
+                    "started_at": str(r["started_at"]),
+                    "revision": r["revision"],
+                }
+                for r in rows
+            ],
+        },
+        query=query,
+    )
+
+
+async def handoff_detail(
+    client: GraphClient,
+    tenant: Tenant,
+    *,
+    handoff: str,
+) -> ToolResult:
+    """One handoff, and whether it is worth continuing.
+
+    Two things are checked rather than reported. A handoff that carries no note
+    is not a handoff, and relaying it onward confidently is the failure this tool
+    exists to prevent. A handoff written against an older graph revision is a
+    weaker case, so the revision is returned with the note rather than hidden:
+    the reader can see whether continuing it means continuing stale work.
+    """
+    res = await client.read(tenant, q.HANDOFF_DETAIL, {"handoff": handoff})
+    rows = [dict(zip(res.columns, r, strict=True)) for r in res.rows]
+
+    if not rows:
+        known = await client.read(tenant, q.ALL_HANDOFF_KEYS)
+        return ToolResult.missing_subject(
+            handoff, candidates=_candidate_keys(known.rows), what="handoff"
+        )
+
+    row = rows[0]
+    ev = Evidence(
+        key=str(row["key"]),
+        label="Handoff",
+        title=f"{row['from_agent']} → {row['to_agent']}, revision {row['graph_revision']}",
+    )
+    if not str(row["note"] or "").strip():
+        return ToolResult.missing_support(
+            f"{handoff} carries no note, so there is nothing to continue",
+            needed="a handoff that says what the next session should do",
+            opened=[ev],
+            data={"handoff": dict(row)},
+            query=q.HANDOFF_DETAIL,
+        )
+
+    facts = [
+        Fact(
+            f"{handoff}: {row['note']} (written {row['created_at']} against graph revision "
+            f"{row['graph_revision']}, from {row['from_agent']} to {row['to_agent']}).",
+            (ev,),
+        )
+    ]
+    if row["service"]:
+        facts.append(
+            Fact(
+                f"It is about {row['service']} ({row['service_title']}), and the work sits "
+                f"with {row['team_name']}.",
+                (ev,),
+            )
+        )
+    return ToolResult.answered(
+        facts,
+        opened=[ev],
+        data={
+            "handoff": {
+                k: (v if isinstance(v, (int, float, str)) or v is None else str(v))
+                for k, v in row.items()
+            }
+        },
+        query=q.HANDOFF_DETAIL,
+    )
+
+
+async def procedure_for(
+    client: GraphClient,
+    tenant: Tenant,
+    *,
+    service: str,
+) -> ToolResult:
+    """A reviewed procedure for a service, refusing to hand back an unreviewed one.
+
+    The refusal is the point. "Apply what worked last time" is only safe if a
+    human passed it, so a candidate procedure is reported as something that
+    exists and must not be relied on, rather than as instructions.
+    """
+    subject, known = await _subject(client, tenant, service)
+    if subject is None:
+        return ToolResult.missing_subject(service, candidates=known, what="service")
+
+    res = await client.read(tenant, q.PROCEDURES_FOR, {"service": service})
+    rows = [dict(zip(res.columns, r, strict=True)) for r in res.rows]
+    if not rows:
+        return ToolResult.no_relation(
+            f"No procedure is recorded for {service}.",
+            subject=subject,
+            data={"service": service, "procedures": []},
+            query=q.PROCEDURES_FOR,
+        )
+
+    reviewed = [r for r in rows if str(r["status"]) == "reviewed"]
+    if not reviewed:
+        candidate = rows[0]
+        ev = Evidence(
+            key=str(candidate["key"]),
+            label="Procedure",
+            title=f"{candidate['title']} (candidate)",
+        )
+        return ToolResult.missing_support(
+            f"the only procedure recorded for {service} is still a candidate",
+            needed="a procedure a human has reviewed, not one proposed and never passed",
+            opened=[subject, ev],
+            data={"service": service, "procedures": [dict(r) for r in rows]},
+            query=q.PROCEDURES_FOR,
+        )
+
+    facts: list[Fact] = []
+    opened: list[Evidence] = []
+    for row in reviewed:
+        ev = Evidence(key=str(row["key"]), label="Procedure", title=f"{row['title']} (reviewed)")
+        opened.append(ev)
+        facts.append(Fact(f"{row['title']}: {row['steps']}", (ev, subject)))
+
+    conflicts = tuple(
+        f"{r['key']} is a candidate procedure for {service} and has not been reviewed, so it "
+        f"is not evidence about how to act."
+        for r in rows
+        if str(r["status"]) != "reviewed"
+    )
+    return ToolResult.answered(
+        facts,
+        opened=opened,
+        conflicts=conflicts,
+        data={"service": service, "procedures": [dict(r) for r in rows]},
+        query=q.PROCEDURES_FOR,
+    )
+
+
+async def decisions_for(
+    client: GraphClient,
+    tenant: Tenant,
+    *,
+    service: str,
+) -> ToolResult:
+    """Which decisions govern a service — and, when none do, that as an answer.
+
+    This is the middle row of the emptiness rule applied to the decision record:
+    a service no decision covers is a positive finding about the company, not a
+    failed lookup. That difference is worth stating out loud, because "nothing
+    governs this" is the sentence a quiet organisation most needs to hear.
+    """
+    subject, known = await _subject(client, tenant, service)
+    if subject is None:
+        return ToolResult.missing_subject(service, candidates=known, what="service")
+
+    res = await client.read(tenant, q.SERVICE_DECISIONS, {"service": service})
+    rows = [dict(zip(res.columns, r, strict=True)) for r in res.rows]
+    if not rows:
+        return ToolResult.no_relation(
+            f"No decision is recorded as governing {service}.",
+            subject=subject,
+            data={"service": service, "decisions": []},
+            query=q.SERVICE_DECISIONS,
+        )
+
+    facts: list[Fact] = []
+    opened: list[Evidence] = []
+    conflicts: list[str] = []
+    for row in rows:
+        ev = Evidence(key=str(row["key"]), label="Decision", title=str(row["title"]))
+        opened.append(ev)
+        grounds = [g for g in (row["grounds"] or []) if g]
+        facts.append(
+            Fact(
+                f"{row['title']} ({row['status']}, decided {row['decided_at']}) governs "
+                f"{service}, grounded in {len(grounds)} document(s).",
+                (ev, subject),
+            )
+        )
+        if not grounds:
+            conflicts.append(
+                f"{row['key']} governs {service} but no document is recorded as supporting it."
+            )
+    return ToolResult.answered(
+        facts,
+        opened=opened,
+        conflicts=tuple(conflicts),
+        data={"service": service, "decisions": [dict(r) for r in rows]},
+        query=q.SERVICE_DECISIONS,
     )

@@ -167,12 +167,10 @@ ORDER BY doc_key
 """
 
 SERVICE_DECISIONS = f"""
-MATCH (d:{Label.DECISION})-[:{Rel.SUPPORTS}]->(doc:{Label.DOCUMENT})
-WHERE toLower(doc.body) CONTAINS toLower($service)
-   OR toLower(doc.title) CONTAINS toLower($service)
-RETURN DISTINCT d.key AS key, d.title AS title, d.decided_at AS decided_at,
-       d.status AS status, doc.key AS doc_key, doc.title AS doc_title,
-       doc.revision AS doc_revision, doc.published_at AS doc_published
+MATCH (d:{Label.DECISION})-[:{Rel.AFFECTS}]->(s:{Label.SERVICE} {{key: $service}})
+OPTIONAL MATCH (d)-[:{Rel.SUPPORTS}]->(doc:{Label.DOCUMENT})
+RETURN d.key AS key, d.title AS title, d.decided_at AS decided_at,
+       d.status AS status, collect(DISTINCT doc.key) AS grounds
 ORDER BY d.decided_at DESC
 """
 
@@ -285,7 +283,8 @@ RETURN i.key AS key, i.severity AS severity, i.title AS title,
 
 RECENT_EPISODES = f"""
 MATCH (e:{Label.EPISODE})
-RETURN e.key AS key, e.session AS session, e.summary AS summary, e.started_at AS started_at
+RETURN e.key AS key, e.session AS session, e.summary AS summary, e.started_at AS started_at,
+       e.revision AS revision
 ORDER BY e.started_at DESC
 LIMIT $limit
 """
@@ -294,7 +293,7 @@ EPISODES_TOUCHING_SERVICE = f"""
 MATCH (e:{Label.EPISODE})<-[:{Rel.LEARNED_IN}]-(cl:{Label.CLAIM})-[:{Rel.ABOUT}]->
       (s:{Label.SERVICE} {{key: $service}})
 RETURN DISTINCT e.key AS key, e.session AS session, e.started_at AS started_at,
-       e.summary AS summary
+       e.summary AS summary, e.revision AS revision
 ORDER BY e.started_at DESC
 """
 
@@ -304,6 +303,40 @@ RETURN h.key AS key, h.from_agent AS from_agent, h.to_agent AS to_agent,
        h.created_at AS created_at, h.graph_revision AS graph_revision, h.note AS note
 ORDER BY h.created_at DESC
 LIMIT $limit
+"""
+
+ALL_HANDOFF_KEYS = f"""
+MATCH (h:{Label.HANDOFF})
+RETURN h.key AS key
+ORDER BY h.key
+"""
+
+HANDOFF_DETAIL = f"""
+MATCH (h:{Label.HANDOFF} {{key: $handoff}})
+OPTIONAL MATCH (h)-[:{Rel.ABOUT}]->(s:{Label.SERVICE})
+OPTIONAL MATCH (h)-[:{Rel.HANDED_TO}]->(t:{Label.TEAM})
+RETURN h.key AS key, h.from_agent AS from_agent, h.to_agent AS to_agent,
+       h.created_at AS created_at, h.graph_revision AS graph_revision, h.note AS note,
+       s.key AS service, s.name AS service_title,
+       t.key AS team_key, t.name AS team_name
+"""
+
+ALL_PROCEDURE_KEYS = f"""
+MATCH (p:{Label.PROCEDURE})
+RETURN p.key AS key
+ORDER BY p.key
+"""
+
+PROCEDURES_FOR = f"""
+MATCH (p:{Label.PROCEDURE})-[:{Rel.ABOUT}]->(s:{Label.SERVICE} {{key: $service}})
+RETURN p.key AS key, p.title AS title, p.steps AS steps, p.status AS status
+ORDER BY CASE p.status WHEN 'reviewed' THEN 0 ELSE 1 END, p.key
+"""
+
+EPISODE_DETAIL = f"""
+MATCH (e:{Label.EPISODE} {{key: $episode}})
+RETURN e.key AS key, e.session AS session, e.summary AS summary,
+       e.started_at AS started_at, e.revision AS revision
 """
 
 GRAPH_REVISION = """
