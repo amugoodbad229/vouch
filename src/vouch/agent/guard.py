@@ -71,6 +71,32 @@ def normalise(text: str) -> str:
     return text.translate(_DASHES)
 
 
+#: The narrow fold, for display rather than for checking. It maps the dashes that
+#: are *only* ever typos in an identifier -- U+2011 is what a model emits when it
+#: decides "payments-api" should not line-break -- and deliberately leaves the en
+#: and em dash alone, because those are punctuation a writer chose.
+_DISPLAY_DASHES = str.maketrans(
+    {
+        "\u2010": "-",  # hyphen
+        "\u2011": "-",  # non-breaking hyphen
+        "\u2012": "-",  # figure dash
+        "\u2212": "-",  # minus sign
+        "\u00ad": "",  # soft hyphen
+    }
+)
+
+
+def display(text: str) -> str:
+    """Make a sentence safe to print without changing what it says.
+
+    A model writing `Payments\u2011API` is not wrong about the entity, but a
+    terminal and a browser disagree about which glyph that is, search does not
+    find it, and a copied key does not match the graph. Fixing it on the way out
+    is the only place it can be fixed for every reader at once.
+    """
+    return text.translate(_DISPLAY_DASHES)
+
+
 ALL_KEYS = f"""
 MATCH (n:{Label.SERVICE}) RETURN collect(DISTINCT n.key) AS keys
 UNION MATCH (n:{Label.DOCUMENT}) RETURN collect(DISTINCT n.key) AS keys
@@ -353,7 +379,10 @@ def enforce(text: str, results: Sequence[ToolResult], universe: frozenset[str]) 
         # confusion between "X exists" and "X has dependents" that this product is
         # built to remove.
         outcome=answered[-1].outcome if answered else Outcome.MISSING_SUPPORT,
-        text=text,
+        # Displayed, not rewritten: the fold only touches the dashes that are
+        # invisible typos, so the sentence a reviewer reads is the sentence the
+        # guard checked.
+        text=display(text),
         verdict=verdict,
         results=tuple(results),
     )

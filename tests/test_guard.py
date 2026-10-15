@@ -290,3 +290,30 @@ def test_an_answered_result_still_cites_what_it_names() -> None:
     )
     verdict = check("orders-api calls payments-api.", [res], ACME_KEYS)
     assert verdict.citations == ("orders-api", "payments-api")
+
+
+def test_the_display_fold_fixes_typo_dashes_but_keeps_punctuation() -> None:
+    """The fold that makes text printable is not the fold that checks it.
+
+    A model writing `payments\u2011api` is naming a real key with a glyph that
+    breaks copy-paste and search. Folding it on output is right. Folding an em
+    dash is not -- that is punctuation the writer chose, and silently replacing it
+    with a hyphen degrades every sentence that contains one.
+    """
+    from vouch.agent.guard import display, normalise
+
+    assert display("payments\u2011api") == "payments-api"
+    assert display("soft\u00adhyphen") == "softhyphen"
+    # Both dashes survive display, and both fold for checking.
+    assert display("a \u2014 b") == "a \u2014 b"
+    assert display("a \u2013 b") == "a \u2013 b"
+    assert normalise("a \u2014 b") == "a - b"
+
+
+def test_the_returned_answer_is_display_safe() -> None:
+    res = ToolResult.answered(
+        [Fact("orders\u2011api calls payments\u2011api.", (ORDERS, PAYMENTS))], opened=(PAYMENTS, ORDERS)
+    )
+    guarded = enforce("orders\u2011api calls payments\u2011api.", [res], ACME_KEYS)
+    assert guarded.text == "orders-api calls payments-api."
+    assert guarded.outcome is Outcome.ANSWERED
