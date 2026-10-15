@@ -327,15 +327,18 @@ def enforce(text: str, results: Sequence[ToolResult], universe: frozenset[str]) 
         )
 
     return GuardedAnswer(
-        # The badge follows the graph, not the model: if nothing the agent read
-        # reported a relation, the answer is "there is none", even though the prose
-        # was fluent enough to be called "answered". This is the distinction the
-        # whole product is about, so it is decided by the results, not by the text.
-        outcome=(
-            Outcome.ANSWERED
-            if any(r.outcome is Outcome.ANSWERED for r in answered)
-            else Outcome.NO_RELATION
-        ),
+        # The badge follows the graph, not the model: which of the four shapes this
+        # answer has is decided by the results, not by how fluent the prose is.
+        #
+        # It is decided by the *last* answer-producing result rather than by any of
+        # them, because the agent legitimately calls a lookup first and the lookup
+        # succeeding says the subject exists -- it does not say the subject has the
+        # relation that was asked about. An earlier version asked whether any result
+        # was ANSWERED, so "does anything depend on X?" came back badged ANSWERED
+        # whenever the agent had resolved X's name on the way, which is exactly the
+        # confusion between "X exists" and "X has dependents" that this product is
+        # built to remove.
+        outcome=answered[-1].outcome if answered else Outcome.MISSING_SUPPORT,
         text=text,
         verdict=verdict,
         results=tuple(results),
