@@ -37,7 +37,7 @@ from vouch.actions.adapters import MockAdapter
 from vouch.actions.ledger import Ledger
 from vouch.agent.core import ask, make_session
 from vouch.config import Settings
-from vouch.graph.client import GraphClient, Tenant, TenantMissing
+from vouch.graph.client import EngineUnavailable, GraphClient, Tenant, TenantMissing
 from vouch.tools import read as R
 from vouch.tools import write as W
 from vouch.tools.contract import Outcome, ToolResult
@@ -315,9 +315,20 @@ def main(argv: list[str] | None = None) -> int:
         from vouch.seed import load as loader
 
         return asyncio.run(loader._amain(["--all"] + (["--reset"] if args.reset else [])))
-    if cmd == "ask":
-        return asyncio.run(ask_once(settings, args.question, settings.default_tenant, args.as_of))
-    return asyncio.run(demo(settings))
+    try:
+        if cmd == "ask":
+            return asyncio.run(ask_once(settings, args.question, settings.default_tenant, args.as_of))
+        return asyncio.run(demo(settings))
+    except EngineUnavailable as exc:
+        # The removal test, from the terminal. Every graph-dependent decision fails
+        # explicitly, and "the database is down" is not allowed to look like "your
+        # service is not in the graph" or like a stack trace.
+        console.print(f"\n[red]cannot reach the graph.[/red] {exc}")
+        console.print(
+            "[dim]this is an outage, not an absence: nothing was answered, and nothing "
+            "was guessed. Start it with: docker compose up -d --wait[/dim]"
+        )
+        return 2
 
 
 if __name__ == "__main__":

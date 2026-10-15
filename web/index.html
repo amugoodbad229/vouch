@@ -450,6 +450,7 @@ const MEANING = {
   missing_subject: "The graph has no record of the subject, so there is nothing to reason from.",
   missing_support: "The graph cannot support an answer to this, so it refused rather than guess.",
   refused: "The graph could not support an answer. A confident guess here is the failure this tool exists to prevent.",
+  engine_unavailable: "The graph is unreachable. This is an outage, not an absence — nothing was answered and nothing was guessed.",
 };
 
 let cy, allNodes = [], allEdges = [], track = "01";
@@ -530,6 +531,7 @@ const STATUS = {
   no_relation:     { icon: "⊘", tone: "none",  word: "no relation" },
   missing_subject: { icon: "!", tone: "error", word: "refused — subject absent" },
   missing_support: { icon: "!", tone: "error", word: "refused — no support" },
+  engine_unavailable: { icon: "!", tone: "error", word: "refused — graph unreachable" },
 };
 
 function stepHTML(t, open) {
@@ -796,8 +798,12 @@ async function ask(question) {
       body: JSON.stringify({ question, tenant: TENANT }),
     });
     const d = await r.json();
+    // The API tells us *why* it refused, including when the reason is that the
+    // engine is gone. Reading the status code instead would collapse an outage
+    // into the same red card as an absence, which is the confusion this whole
+    // product is about.
     panel.lastElementChild.outerHTML = turnHTML(question, r.ok ? d : {
-      outcome: "missing_support", refused: true, citations: [], violations: [],
+      outcome: d.outcome || "missing_support", refused: true, citations: [], violations: [],
       answer: d.detail || r.statusText, trace: [],
     });
     if (track === "01") refreshGate();

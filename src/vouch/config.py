@@ -96,9 +96,20 @@ class Outcome(StrEnum):
     MISSING_SUPPORT = "missing_support"
     """The relation exists but no evidence backs the claim. Refuse."""
 
+    ENGINE_UNAVAILABLE = "engine_unavailable"
+    """The graph could not be reached. Refuse, and say why.
+
+    Deliberately not folded into `MISSING_SUBJECT`. "The service is not in the
+    graph" and "the graph is not answering" are the two facts a caller most needs
+    to tell apart, and an agent that reports the second as the first is telling
+    an on-call engineer that nothing is wrong with a system it could not read.
+    This is the removal test's outcome: stop the database and every graph-dependent
+    decision fails explicitly instead of degrading into a guess.
+    """
+
     @property
     def is_refusal(self) -> bool:
-        return self in (Outcome.MISSING_SUBJECT, Outcome.MISSING_SUPPORT)
+        return self in (Outcome.MISSING_SUBJECT, Outcome.MISSING_SUPPORT, Outcome.ENGINE_UNAVAILABLE)
 
 
 TRAVERSAL_DEPTHS: Final[frozenset[int]] = frozenset({1, 2, 3, 4})

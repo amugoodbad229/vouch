@@ -340,17 +340,41 @@ def enforce(text: str, results: Sequence[ToolResult], universe: frozenset[str]) 
             results=(),
         )
 
+    # An outage is checked before anything else, including before a partial
+    # answer. If the graph stopped answering partway through, then the prose was
+    # written from an incomplete read, and shipping it because some of the reads
+    # succeeded is how a system sounds most confident during the incident it can
+    # least see. The reason is carried through verbatim so the reader is told
+    # which engine and which port.
+    outage = next((r for r in results if r.outcome is Outcome.ENGINE_UNAVAILABLE), None)
+    if outage is not None:
+        return GuardedAnswer(
+            outcome=Outcome.ENGINE_UNAVAILABLE,
+            text=(
+                "The graph is unreachable, so this cannot be answered. "
+                + "; ".join(outage.missing_information)
+            ),
+            verdict=verdict,
+            results=tuple(results),
+        )
+
     answered = [
         r for r in results if r.outcome is Outcome.ANSWERED or r.outcome is Outcome.NO_RELATION
     ]
     if not answered:
         reasons = "; ".join(m for r in results for m in r.missing_information)
+        # An outage is not the graph saying no. It is the graph not saying
+        # anything, and the person reading deserves to be told which one it was
+        # without having to know what a `missing_subject` is.
+        outage = any(r.outcome is Outcome.ENGINE_UNAVAILABLE for r in results)
         return GuardedAnswer(
-            outcome=Outcome.MISSING_SUPPORT,
+            outcome=Outcome.ENGINE_UNAVAILABLE if outage else Outcome.MISSING_SUPPORT,
             text=(
-                "The graph cannot support an answer to this. "
-                f"{reasons or 'Every tool that was run refused.'}"
-            ),
+                "The graph is unreachable, so this cannot be answered. "
+                if outage
+                else "The graph cannot support an answer to this. "
+            )
+            + f"{reasons or 'Every tool that was run refused.'}",
             verdict=verdict,
             results=tuple(results),
         )
@@ -378,7 +402,16 @@ def enforce(text: str, results: Sequence[ToolResult], universe: frozenset[str]) 
         # whenever the agent had resolved X's name on the way, which is exactly the
         # confusion between "X exists" and "X has dependents" that this product is
         # built to remove.
-        outcome=answered[-1].outcome if answered else Outcome.MISSING_SUPPORT,
+        outcome=(
+            # An outage outranks every other shape. If the graph could not be read,
+            # then whatever the other tools returned was read while it still
+            # worked, and the honest summary of the whole run is that the run did
+            # not complete. Reporting a partial answer here is how a system ends up
+            # sounding confident during exactly the incident it cannot see.
+            Outcome.ENGINE_UNAVAILABLE
+            if any(r.outcome is Outcome.ENGINE_UNAVAILABLE for r in results)
+            else (answered[-1].outcome if answered else Outcome.MISSING_SUPPORT)
+        ),
         # Displayed, not rewritten: the fold only touches the dashes that are
         # invisible typos, so the sentence a reviewer reads is the sentence the
         # guard checked.

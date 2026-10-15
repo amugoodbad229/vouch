@@ -274,6 +274,25 @@ class ToolResult:
             query=query,
         )
 
+    @classmethod
+    def engine_unavailable(cls, reason: str, *, query: str = "") -> Self:
+        """The graph could not be read, so nothing can be asserted at all.
+
+        Deliberately not `missing_subject`. "Your service is not in the graph" is
+        information about the service; "the database is not answering" is
+        information about us. An agent that reports the second as the first tells
+        an on-call engineer that nothing is wrong with a system it never managed
+        to read -- which is the removal test, and the reason this outcome exists
+        rather than letting a connection error become a stack trace.
+        """
+        return cls(
+            outcome=Outcome.ENGINE_UNAVAILABLE,
+            missing_information=(
+                f"the graph could not be read, so nothing can be said about this: {reason}",
+            ),
+            query=query,
+        )
+
     # -- introspection -----------------------------------------------------
 
     @property

@@ -18,13 +18,15 @@ Two things about FalkorDB v4.22.0 drive every design decision in this file.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 import time
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self
 
 import redis.asyncio as aioredis
+import redis.exceptions as redis_exc
 from falkordb.asyncio import FalkorDB
 
 from vouch.config import Settings, settings
@@ -33,6 +35,31 @@ if TYPE_CHECKING:
     from vouch.graph.schema import SchemaPlan
 
 _TENANT_RE = re.compile(r"^[a-z0-9][a-z0-9_]{0,30}$")
+
+
+class EngineUnavailable(RuntimeError):
+    """The graph is not answering.
+
+    Separate from `TenantMissing` on purpose. "This tenant has no graph" is a
+    statement about the data; "the engine is down" is a statement about the
+    system, and a caller that treats the second as the first will confidently
+    report that nothing is wrong with a service it never managed to read.
+    """
+
+
+@contextlib.asynccontextmanager
+async def _reaching(what: str) -> AsyncIterator[None]:
+    """Turn a transport failure into one explicit exception type.
+
+    Only transport errors are caught. A `ResponseError` -- a malformed query, a
+    missing index -- is a real answer from a working engine and must not be
+    disguised as an outage, because the two call for opposite responses: fix the
+    query, or wait for the database.
+    """
+    try:
+        yield
+    except (redis_exc.ConnectionError, redis_exc.TimeoutError, OSError) as exc:
+        raise EngineUnavailable(f"the graph is not answering ({what}): {exc}") from exc
 
 
 class TenantMissing(LookupError):
@@ -98,15 +125,31 @@ class GraphClient:
     """Owns the pool and the tenant registry, and nothing else."""
 
     def __init__(self, cfg: Settings | None = None) -> None:
+        """Build the pool. This does touch the network, which is not our choice.
+
+        `FalkorDB(...)` probes the server in its constructor -- it runs `INFO` to
+        decide whether it is talking to a cluster -- so "has the database gone
+        away" is answered here, before any query, and a plain `ConnectionError`
+        escaping this line would reach the caller as a traceback from inside a
+        library. Converting it is the whole of the removal test's first half: an
+        unreachable engine has to arrive as one named exception type that every
+        layer above already knows how to render.
+        """
         self._settings = cfg or settings
-        self._db = FalkorDB(
-            host=self._settings.falkordb_host,
-            port=self._settings.falkordb_port,
-            username=self._settings.falkordb_username,
-            password=self._settings.falkordb_password,
-            max_connections=self._settings.max_connections,
-            socket_timeout=self._settings.query_timeout_ms / 1000,
-        )
+        try:
+            self._db = FalkorDB(
+                host=self._settings.falkordb_host,
+                port=self._settings.falkordb_port,
+                username=self._settings.falkordb_username,
+                password=self._settings.falkordb_password,
+                max_connections=self._settings.max_connections,
+                socket_timeout=self._settings.query_timeout_ms / 1000,
+            )
+        except (redis_exc.ConnectionError, redis_exc.TimeoutError, OSError) as exc:
+            raise EngineUnavailable(
+                f"the graph is not answering (connect to "
+                f"{self._settings.falkordb_host}:{self._settings.falkordb_port}): {exc}"
+            ) from exc
 
     async def __aenter__(self) -> Self:
         return self
@@ -175,11 +218,14 @@ class GraphClient:
     # -- tenant registry ---------------------------------------------------
 
     async def list_tenants(self) -> list[str]:
-        names = await self._db.list_graphs()
+        async with _reaching("GRAPH.LIST"):
+            names = await self._db.list_graphs()
         return sorted(n[2:] for n in names if isinstance(n, str) and n.startswith("t_"))
 
     async def exists(self, tenant: Tenant) -> bool:
-        return tenant.graph in (await self._db.list_graphs())
+        async with _reaching("GRAPH.LIST"):
+            names = await self._db.list_graphs()
+        return tenant.graph in names
 
     async def require(self, tenant: Tenant) -> None:
         if not await self.exists(tenant):
@@ -218,7 +264,8 @@ class GraphClient:
         """
         await self.require(tenant)
         graph = self._db.select_graph(tenant.graph)
-        res = await graph.ro_query(cypher, dict(params or {}))
+        async with _reaching("RO_QUERY"):
+            res = await graph.ro_query(cypher, dict(params or {}))
         return _shape(res)
 
     async def write(
@@ -229,7 +276,8 @@ class GraphClient:
     ) -> Result:
         """Write to a tenant. This is the only path that creates a graph."""
         graph = self._db.select_graph(tenant.graph)
-        res = await graph.query(cypher, dict(params or {}))
+        async with _reaching("QUERY"):
+            res = await graph.query(cypher, dict(params or {}))
         return _shape(res)
 
     # -- schema ------------------------------------------------------------

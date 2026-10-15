@@ -35,7 +35,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from vouch.actions.adapters import Adapter, MockAdapter
 from vouch.actions.ledger import Ledger
 from vouch.agent.guard import GuardedAnswer, enforce, key_universe
-from vouch.graph.client import GraphClient, Tenant
+from vouch.graph.client import EngineUnavailable, GraphClient, Tenant
 from vouch.tools import read as R
 from vouch.tools import write as W
 from vouch.tools.contract import ToolResult
@@ -147,7 +147,21 @@ def build_agent(model: Model | None = None) -> Agent[Session, str]:
         return _prompt(ctx.deps)
 
     async def _run(ctx: RunContext[Session], coro: Any) -> str:
-        return ctx.deps.record(await coro, ctx.tool_name or "")
+        """Run one tool, and make an outage a tool result rather than a crash.
+
+        Every tool goes through here, so this is the one place that has to know
+        what an unreachable engine means. It becomes a `ToolResult` like any other
+        refusal, which means the model is told the same thing the page shows, the
+        guard refuses on it, and the caller gets a sentence rather than a
+        traceback. The alternative -- letting the exception escape -- produces a
+        500 whose text is a stack trace, which is technically explicit and
+        useless to the person holding the pager.
+        """
+        try:
+            result = await coro
+        except EngineUnavailable as exc:
+            result = ToolResult.engine_unavailable(str(exc))
+        return ctx.deps.record(result, ctx.tool_name or "")
 
     @agent.tool
     async def resolve_service(ctx: RunContext[Session], term: str) -> str:
@@ -275,9 +289,17 @@ async def ask(
     "the graph has nothing here" is exactly the answer a model is most likely to
     improve on.
     """
-    if not session.universe:
-        await session.load_universe()
-    run = await (agent or build_agent()).run(question, deps=session)
+    try:
+        if not session.universe:
+            await session.load_universe()
+        run = await (agent or build_agent()).run(question, deps=session)
+    except EngineUnavailable as exc:
+        # The outage can happen here rather than inside a tool: loading the key
+        # universe is a query too. It gets the same shape as any other refusal,
+        # so a caller never has to distinguish "the engine is down" from "the
+        # tools ran and refused" by reading a traceback.
+        session.record(ToolResult.engine_unavailable(str(exc)), "graph")
+        return enforce("", session.results, session.universe)
     return enforce(run.output, session.results, session.universe)
 
 

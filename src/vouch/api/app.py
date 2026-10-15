@@ -21,7 +21,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -29,8 +29,8 @@ from pydantic import BaseModel, Field
 from vouch.actions.adapters import Adapter, GitHubIssueAdapter, MockAdapter
 from vouch.actions.ledger import Ledger, LedgerError
 from vouch.agent.core import Session, ask, make_session
-from vouch.config import Settings
-from vouch.graph.client import GraphClient, Tenant, TenantMissing
+from vouch.config import Outcome, Settings
+from vouch.graph.client import EngineUnavailable, GraphClient, Tenant, TenantMissing
 from vouch.tools import write as W
 from vouch.tools.contract import ToolResult
 
@@ -131,12 +131,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return HTMLResponse("<h1>Vouch</h1><p>web/index.html is missing.</p>", status_code=500)
         return HTMLResponse(page.read_text(encoding="utf-8"))
 
+    @app.exception_handler(EngineUnavailable)
+    async def _engine_down(_request: Request, exc: EngineUnavailable) -> JSONResponse:
+        """An outage is a 503 with a sentence, never a 500 with a stack trace.
+
+        The removal test asks what happens when the graph is gone. The answer has
+        to be that every graph-dependent decision fails *explicitly* -- a caller
+        has to be able to tell "down" from "no such thing", because those call for
+        opposite responses.
+        """
+        return JSONResponse(
+            status_code=503,
+            content={"detail": str(exc), "outcome": Outcome.ENGINE_UNAVAILABLE.value},
+        )
+
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
-        async with GraphClient(cfg) as client:
-            engine = await client.engine()
-            healthy = await client.healthy()
-            tenants = await client.list_tenants()
+        """Health is the one route that must not fail when the thing it checks is down.
+
+        A health check that 500s tells a monitor nothing it did not already know
+        and tells a human less. It reports the outage in the body instead.
+        """
+        try:
+            async with GraphClient(cfg) as client:
+                engine = await client.engine()
+                healthy = await client.healthy()
+                tenants = await client.list_tenants()
+        except EngineUnavailable as exc:
+            return {
+                "healthy": False,
+                "reason": str(exc),
+                "engine_version": None,
+                "module": None,
+                "tenants": [],
+                "ledger": str(cfg.ledger_path),
+                "adapter": app.state.adapter.name,
+            }
         return {
             "healthy": healthy,
             "engine_version": engine.version,
