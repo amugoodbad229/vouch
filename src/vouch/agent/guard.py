@@ -224,7 +224,10 @@ def check(
     )
     return Verdict(
         ok=not unopened and not invented,
-        citations=tuple(sorted(allowed)),
+        # What the prose actually names, not everything that was opened. A tool can
+        # read thirty nodes to answer one question; a citation list that reports all
+        # thirty tells a reviewer nothing about what the sentence rests on.
+        citations=tuple(sorted(named & allowed)),
         unopened=tuple(unopened),
         invented=tuple(invented),
     )
@@ -301,7 +304,15 @@ def enforce(text: str, results: Sequence[ToolResult], universe: frozenset[str]) 
         )
 
     return GuardedAnswer(
-        outcome=Outcome.ANSWERED,
+        # The badge follows the graph, not the model: if nothing the agent read
+        # reported a relation, the answer is "there is none", even though the prose
+        # was fluent enough to be called "answered". This is the distinction the
+        # whole product is about, so it is decided by the results, not by the text.
+        outcome=(
+            Outcome.ANSWERED
+            if any(r.outcome is Outcome.ANSWERED for r in answered)
+            else Outcome.NO_RELATION
+        ),
         text=text,
         verdict=verdict,
         results=tuple(results),

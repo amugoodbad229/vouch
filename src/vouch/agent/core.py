@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -77,9 +77,15 @@ class Session:
         self.universe = await key_universe(self.client, self.tenant)
         return self.universe
 
-    def record(self, result: ToolResult) -> str:
-        self.results.append(result)
-        return json.dumps(result.as_dict(), default=str)
+    def record(self, result: ToolResult, tool: str = "") -> str:
+        """Keep the result and hand it back to the model.
+
+        The tool name is stamped here rather than inside the ten tools, so no tool
+        has to remember to name itself and a mis-stamped result is impossible.
+        """
+        stamped = replace(result, tool=tool) if tool else result
+        self.results.append(stamped)
+        return json.dumps(stamped.as_dict(), default=str)
 
     def last_result(self) -> ToolResult | None:
         """The most recent result that actually produced evidence or a decision."""
@@ -136,7 +142,7 @@ def build_agent(model: Model | None = None) -> Agent[Session, str]:
         return _prompt(ctx.deps)
 
     async def _run(ctx: RunContext[Session], coro: Any) -> str:
-        return ctx.deps.record(await coro)
+        return ctx.deps.record(await coro, ctx.tool_name or "")
 
     @agent.tool
     async def resolve_service(ctx: RunContext[Session], term: str) -> str:

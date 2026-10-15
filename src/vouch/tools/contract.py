@@ -149,6 +149,9 @@ class ToolResult:
     #: auditable: "I could not answer" is only trustworthy if the reviewer can
     #: see what was asked.
     query: str = ""
+    #: Which tool produced this, stamped by the agent loop from the run context.
+    #: Empty when a caller constructs a result directly (tests, the CLI).
+    tool: str = ""
 
     def __post_init__(self) -> None:
         if self.outcome is Outcome.ANSWERED:

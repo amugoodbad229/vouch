@@ -219,8 +219,11 @@ def test_a_no_relation_result_is_an_answer_not_a_refusal() -> None:
         [none_res],
         frozenset({"internal-status-page"}),
     )
-    assert guarded.outcome is Outcome.ANSWERED
+    assert guarded.outcome is Outcome.NO_RELATION
     assert not guarded.refused
+    # And the answer is still the fluent sentence, with the key it named cited.
+    assert "affects nothing" in guarded.text
+    assert guarded.verdict.citations == ("internal-status-page",)
 
 
 def test_verdict_serialises_into_the_wire_shape() -> None:

@@ -84,6 +84,7 @@ def _trace(result: ToolResult) -> dict[str, Any]:
     """What the model read, in the shape the UI renders next to the sentence."""
     return {
         "outcome": result.outcome.value,
+        "tool": result.tool,
         "facts": [f.statement for f in result.facts],
         "conflicts": list(result.conflicts),
         "missing_information": list(result.missing_information),
@@ -197,7 +198,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {"kind": v.kind, "detail": v.detail} for v in guarded.verdict.violations
             ],
             "trace": [_trace(r) for r in session.results],
-            "tools": [r.query.split()[0] if r.query else "?" for r in session.results],
+            "tools": [r.tool or "?" for r in session.results],
             "usage": {"tool_calls": len(session.results)},
         }
 
