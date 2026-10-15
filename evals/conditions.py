@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any
 
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
@@ -134,8 +135,6 @@ class BudgetExhausted(RuntimeError):
     """
 
 
-T = TypeVar("T")
-
 _HINT = re.compile(r"try again in\s*(?:(\d+)\s*m(?:in)?\s*)?([\d.]+)\s*s", re.IGNORECASE)
 _DAILY = re.compile(r"per day|tokens per day|\bTPD\b", re.IGNORECASE)
 
@@ -145,7 +144,7 @@ def _is_rate_limit(exc: BaseException) -> bool:
     return "ratelimit" in type(exc).__name__.lower() or "429" in text or "rate limit" in text
 
 
-async def _with_retry(call: Callable[[], Awaitable[T]], *, attempts: int = 4) -> T:
+async def _with_retry[T](call: Callable[[], Awaitable[T]], *, attempts: int = 4) -> T:
     """Wait out a *short* rate limit; abort the run on a daily one.
 
     A transient 429 must not become an ``error`` row that silently shrinks the sample, and
@@ -179,7 +178,9 @@ def build_plain_agent(model_name: str, options: Options) -> Agent[Any, str]:
     return Agent(
         build_model(model_name),
         system_prompt=REFUSAL_PROMPT,
-        model_settings=ModelSettings(temperature=options.temperature, max_tokens=options.max_tokens),
+        model_settings=ModelSettings(
+            temperature=options.temperature, max_tokens=options.max_tokens
+        ),
         retries=0,
     )
 
