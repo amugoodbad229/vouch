@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+# uv.lock and .python-version are deliberately tracked: this is an application,
+# so the resolved environment is part of what makes a result reproducible.
+
+# Local env
+.env
+
+# Artefacts
+.artifacts/
+evals/runs/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Throwaway probes. Real checks live in tests/.
+.probe/
