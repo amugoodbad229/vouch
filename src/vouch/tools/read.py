@@ -288,7 +288,7 @@ async def ownership(
         facts.append(
             Fact(
                 f"{row['kind']} {row['key']} ({row['name']}) owns {service}, {period} "
-                f"— this is the *declared* owner as of {when}.",
+                f"— this is the declared owner as of {when}.",
                 (subject,),
             )
         )
@@ -323,7 +323,7 @@ async def ownership(
         top = effective[0]
         facts.append(
             Fact(
-                f"The *effective* owner is {top['key']} ({top['name']}), who has authored "
+                f"The effective owner is {top['key']} ({top['name']}), who has authored "
                 f"{top['touches']} change(s) touching {service}, most recently {top['last_touch']}.",
                 tuple(
                     Evidence(
