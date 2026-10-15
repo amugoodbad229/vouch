@@ -375,12 +375,12 @@ async def load_named(
         return await load(client, tenant, spec, reset=reset)
 
 
-async def _amain() -> int:
+async def _amain(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vouch-seed", description=__doc__)
     parser.add_argument("--tenant", default="acme", choices=sorted(TENANTS))
     parser.add_argument("--reset", action="store_true", help="empty the tenant first")
     parser.add_argument("--all", action="store_true", help="load every tenant")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     names = sorted(TENANTS) if args.all else [args.tenant]
     for name in names:
