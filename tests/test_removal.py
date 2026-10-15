@@ -89,3 +89,48 @@ def test_an_outage_with_no_prose_still_refuses_clearly() -> None:
     assert guarded.outcome is Outcome.ENGINE_UNAVAILABLE
     assert guarded.refused
     assert guarded.text.strip()
+
+
+# -- the other half of the outage surface: the graph is fine, the model is not --
+#
+# A rate limit during a demo is an ordinary event, not an exotic one. What must
+# never happen is that it reaches a viewer as a stack trace, and what must
+# especially never happen is that a tool which *did* succeed turns an empty reply
+# into an answer.
+
+
+def test_a_model_failure_is_its_own_outcome() -> None:
+    """Not `missing_support`. The graph was read; the prose was not written."""
+    res = ToolResult.model_unavailable("HTTP 429 from the model: Rate limit reached")
+    assert res.outcome is Outcome.MODEL_UNAVAILABLE
+    assert res.refused
+    assert "429" in res.missing_information[0]
+
+
+def test_a_model_failure_refuses_even_when_a_tool_answered() -> None:
+    """The property that matters: evidence is not an answer.
+
+    A tool that returned grounded facts makes the `answered` list non-empty. If
+    the prose never arrived, shipping the empty string would present a confident
+    nothing -- worse than the outage, because it looks like a finding.
+    """
+    grounded = ToolResult.answered([])
+    guarded = enforce(
+        "",
+        [grounded, ToolResult.model_unavailable("HTTP 429 from the model: rate limited")],
+        frozenset(),
+    )
+    assert guarded.outcome is Outcome.MODEL_UNAVAILABLE
+    assert guarded.refused
+    assert "429" in guarded.text
+    assert "The graph itself is fine" in guarded.text
+
+
+def test_a_model_failure_is_not_reported_as_a_missing_fact() -> None:
+    """The two outages and the two absences are four different sentences."""
+    model = enforce("", [ToolResult.model_unavailable("rate limited")], frozenset())
+    engine = enforce("", [ToolResult.engine_unavailable("connect refused")], frozenset())
+    support = enforce("", [ToolResult.missing_support("no owner", needed="an owner")], frozenset())
+    subject = enforce("", [ToolResult.missing_subject("ghost")], frozenset())
+    outcomes = {model.outcome, engine.outcome, support.outcome, subject.outcome}
+    assert len(outcomes) == 4

@@ -107,9 +107,22 @@ class Outcome(StrEnum):
     decision fails explicitly instead of degrading into a guess.
     """
 
+    MODEL_UNAVAILABLE = "model_unavailable"
+    """The graph answered but the language model could not be reached.
+
+    Kept separate from `ENGINE_UNAVAILABLE` for the same reason that one is kept
+    separate from `MISSING_SUBJECT`: the reader needs to know which half broke.
+    A rate-limited model is not a missing fact, and it is not a downed graph.
+    """
+
     @property
     def is_refusal(self) -> bool:
-        return self in (Outcome.MISSING_SUBJECT, Outcome.MISSING_SUPPORT, Outcome.ENGINE_UNAVAILABLE)
+        return self in (
+            Outcome.MISSING_SUBJECT,
+            Outcome.MISSING_SUPPORT,
+            Outcome.ENGINE_UNAVAILABLE,
+            Outcome.MODEL_UNAVAILABLE,
+        )
 
 
 TRAVERSAL_DEPTHS: Final[frozenset[int]] = frozenset({1, 2, 3, 4})

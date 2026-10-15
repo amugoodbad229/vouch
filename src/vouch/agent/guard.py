@@ -358,23 +358,48 @@ def enforce(text: str, results: Sequence[ToolResult], universe: frozenset[str]) 
             results=tuple(results),
         )
 
+    # The graph answered and the reply never arrived. Checked before the
+    # answered/refused split, because a tool that succeeded does not turn an
+    # empty reply into an answer -- falling through would ship the empty string
+    # as a confident nothing.
+    silent = next((r for r in results if r.outcome is Outcome.MODEL_UNAVAILABLE), None)
+    if silent is not None:
+        return GuardedAnswer(
+            outcome=Outcome.MODEL_UNAVAILABLE,
+            text=(
+                "The model that writes the reply could not be reached, so no answer "
+                "was composed. The graph itself is fine. " + "; ".join(silent.missing_information)
+            ),
+            verdict=verdict,
+            results=tuple(results),
+        )
+
     answered = [
         r for r in results if r.outcome is Outcome.ANSWERED or r.outcome is Outcome.NO_RELATION
     ]
     if not answered:
         reasons = "; ".join(m for r in results for m in r.missing_information)
-        # An outage is not the graph saying no. It is the graph not saying
-        # anything, and the person reading deserves to be told which one it was
-        # without having to know what a `missing_subject` is.
+        # Three different sentences, and the reader deserves the right one without
+        # having to know what a `missing_subject` is:
+        #   * the graph is not answering (an outage);
+        #   * the graph has no record of the subject (nothing to look up);
+        #   * the graph has the subject and cannot support the claim.
+        # Collapsing the last two is the distinction the whole product rests on,
+        # so it is not collapsed here either.
         outage = any(r.outcome is Outcome.ENGINE_UNAVAILABLE for r in results)
+        absent = all(r.outcome is Outcome.MISSING_SUBJECT for r in results)
+        if outage:
+            outcome = Outcome.ENGINE_UNAVAILABLE
+            opening = "The graph is unreachable, so this cannot be answered. "
+        elif absent:
+            outcome = Outcome.MISSING_SUBJECT
+            opening = "The graph has no record of this, so there is nothing to answer from. "
+        else:
+            outcome = Outcome.MISSING_SUPPORT
+            opening = "The graph cannot support an answer to this. "
         return GuardedAnswer(
-            outcome=Outcome.ENGINE_UNAVAILABLE if outage else Outcome.MISSING_SUPPORT,
-            text=(
-                "The graph is unreachable, so this cannot be answered. "
-                if outage
-                else "The graph cannot support an answer to this. "
-            )
-            + f"{reasons or 'Every tool that was run refused.'}",
+            outcome=outcome,
+            text=opening + f"{reasons or 'Every tool that was run refused.'}",
             verdict=verdict,
             results=tuple(results),
         )

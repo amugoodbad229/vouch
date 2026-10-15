@@ -174,8 +174,12 @@ def test_a_confident_paragraph_on_top_of_a_refusal_is_withheld() -> None:
         frozenset({"notification-service", "payments-api"}),
     )
     assert guarded.refused
-    assert guarded.outcome is Outcome.MISSING_SUPPORT
-    assert "cannot support an answer" in guarded.text
+    # Corrected from MISSING_SUPPORT: the single refusal here is a subject that is
+    # absent, and the guard now reports *which* absence it was. Collapsing the two
+    # refusals is the distinction the product rests on, so the guard does not
+    # collapse them either.
+    assert guarded.outcome is Outcome.MISSING_SUBJECT
+    assert "no record of this" in guarded.text
     assert "notification-service" in guarded.text, "the reason must survive into the refusal"
 
 
@@ -312,7 +316,8 @@ def test_the_display_fold_fixes_typo_dashes_but_keeps_punctuation() -> None:
 
 def test_the_returned_answer_is_display_safe() -> None:
     res = ToolResult.answered(
-        [Fact("orders\u2011api calls payments\u2011api.", (ORDERS, PAYMENTS))], opened=(PAYMENTS, ORDERS)
+        [Fact("orders\u2011api calls payments\u2011api.", (ORDERS, PAYMENTS))],
+        opened=(PAYMENTS, ORDERS),
     )
     guarded = enforce("orders\u2011api calls payments\u2011api.", [res], ACME_KEYS)
     assert guarded.text == "orders-api calls payments-api."

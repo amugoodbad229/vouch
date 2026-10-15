@@ -28,6 +28,7 @@ from datetime import date
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -327,7 +328,33 @@ async def ask(
         # tools ran and refused" by reading a traceback.
         session.record(ToolResult.engine_unavailable(str(exc)), "graph")
         return enforce("", session.results, session.universe)
+    except (ModelHTTPError, UnexpectedModelBehavior) as exc:
+        # A rate limit, a provider outage, or a model that answered with
+        # something the framework could not use. The graph is fine and may even
+        # have answered; the prose did not arrive. Recorded as its own outcome
+        # rather than as a support failure, because those two mean different
+        # things to whoever is holding the pager -- and because a rate limit
+        # must never reach a viewer as a stack trace.
+        session.record(ToolResult.model_unavailable(_reason(exc)), "model")
+        return enforce("", session.results, session.universe)
     return enforce(run.output, session.results, session.universe)
+
+
+def _reason(exc: Exception) -> str:
+    """A one-line reason a caller can act on, without the provider's whole body.
+
+    `ModelHTTPError.__str__` dumps the entire JSON error body, which is far too
+    long for a tool result that a model reads back. The status code and the
+    provider's own message are the parts that matter.
+    """
+    if isinstance(exc, ModelHTTPError):
+        body = exc.body if isinstance(exc.body, dict) else {}
+        message = body.get("message") or body.get("error") or exc.body
+        first = str(message).split(". ")[0]
+        if len(first) > 180:
+            first = first[:177].rstrip() + "..."
+        return f"HTTP {exc.status_code} from the model: {first}"
+    return str(exc)
 
 
 def make_session(

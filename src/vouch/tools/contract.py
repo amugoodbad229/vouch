@@ -243,7 +243,10 @@ class ToolResult:
         cands = sorted(candidates)
         hint = ""
         if cands:
-            hint = f" The graph knows {len(cands)} {what}s and this is not one of them."
+            hint = (
+                f" The graph knows {len(cands)} {what}{'' if len(cands) == 1 else 's'}"
+                " and this is not one of them."
+            )
         return cls(
             outcome=Outcome.MISSING_SUBJECT,
             missing_information=(
@@ -291,6 +294,20 @@ class ToolResult:
                 f"the graph could not be read, so nothing can be said about this: {reason}",
             ),
             query=query,
+        )
+
+    @classmethod
+    def model_unavailable(cls, reason: str) -> Self:
+        """The graph answered, but the model did not.
+
+        A separate outcome from `engine_unavailable` because the reader needs to
+        know which half failed, and because a rate limit or a provider outage is
+        a thing that happens during a demo. What must never happen is that it
+        reaches a viewer as a stack trace, or worse, as prose.
+        """
+        return cls(
+            outcome=Outcome.MODEL_UNAVAILABLE,
+            missing_information=(reason,),
         )
 
     # -- introspection -----------------------------------------------------

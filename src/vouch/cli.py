@@ -51,12 +51,16 @@ TONE = {
     Outcome.NO_RELATION: "blue",
     Outcome.MISSING_SUBJECT: "yellow",
     Outcome.MISSING_SUPPORT: "yellow",
+    Outcome.ENGINE_UNAVAILABLE: "red",
+    Outcome.MODEL_UNAVAILABLE: "red",
 }
 BADGE = {
     Outcome.ANSWERED: "ANSWERED",
     Outcome.NO_RELATION: "NO RELATION",
     Outcome.MISSING_SUBJECT: "REFUSED (no such subject)",
     Outcome.MISSING_SUPPORT: "REFUSED (no support)",
+    Outcome.ENGINE_UNAVAILABLE: "REFUSED (graph unreachable)",
+    Outcome.MODEL_UNAVAILABLE: "REFUSED (model unreachable)",
 }
 
 
@@ -97,8 +101,9 @@ def show(result: ToolResult, *, limit: int = 6) -> None:
         console.print(f"    [dim]? would need: {missing}[/dim]")
 
 
-async def answer(client: GraphClient, ledger: Ledger, tenant: Tenant, question: str,
-                 *, as_of: str | None = None) -> None:
+async def answer(
+    client: GraphClient, ledger: Ledger, tenant: Tenant, question: str, *, as_of: str | None = None
+) -> None:
     from datetime import date
 
     session = make_session(client, tenant, ledger, adapter=MockAdapter())
@@ -106,7 +111,7 @@ async def answer(client: GraphClient, ledger: Ledger, tenant: Tenant, question: 
         session.today = date.fromisoformat(as_of)
     guarded = await ask(question, session=session)
 
-    console.print(f'  [bold]?[/bold] {question}')
+    console.print(f"  [bold]?[/bold] {question}")
     console.print(f"    {badge(guarded.outcome)}", end="  ")
     console.print(f"[dim]{', '.join(r.tool for r in guarded.results if r.tool) or 'no tool'}[/dim]")
     console.print(f"    {plain(guarded.text)}")
@@ -132,8 +137,10 @@ async def act_impact(client: GraphClient, ledger: Ledger, tenant: Tenant) -> Non
     table.add_row("1", ", ".join(f.statement.split(" (")[0] for f in one.facts))
     table.add_row("4", ", ".join(f.statement.split(" (")[0] for f in four.facts))
     console.print(table)
-    console.print("  [dim]At depth 1 a join would have found this. "
-                  "merchant-dashboard sits four hops away and nobody pages it.[/dim]\n")
+    console.print(
+        "  [dim]At depth 1 a join would have found this. "
+        "merchant-dashboard sits four hops away and nobody pages it.[/dim]\n"
+    )
     if four.paths:
         console.print(f"  [dim]{four.paths[-1].render()}[/dim]\n")
 
@@ -142,10 +149,18 @@ async def act_impact(client: GraphClient, ledger: Ledger, tenant: Tenant) -> Non
 
 
 async def act_memory(client: GraphClient, ledger: Ledger, tenant: Tenant) -> None:
-    act("2", "A claim is invalidated, never deleted",
-        "Track 02. One question, two dates, two different truths.")
-    await answer(client, ledger, tenant,
-                 "What did we believe about payments-api in March 2026?", as_of="2026-03-01")
+    act(
+        "2",
+        "A claim is invalidated, never deleted",
+        "Track 02. One question, two dates, two different truths.",
+    )
+    await answer(
+        client,
+        ledger,
+        tenant,
+        "What did we believe about payments-api in March 2026?",
+        as_of="2026-03-01",
+    )
     await answer(client, ledger, tenant, "What do we believe about payments-api now?")
 
     result = await R.contradictions(client, tenant)
@@ -153,8 +168,11 @@ async def act_memory(client: GraphClient, ledger: Ledger, tenant: Tenant) -> Non
 
 
 async def act_decisions(client: GraphClient, ledger: Ledger, tenant: Tenant) -> None:
-    act("3", "Decisions with their grounds",
-        "Track 03. A decision whose evidence was superseded says so instead of sounding settled.")
+    act(
+        "3",
+        "Decisions with their grounds",
+        "Track 03. A decision whose evidence was superseded says so instead of sounding settled.",
+    )
     await answer(client, ledger, tenant, "What is the evidence for dec-org-restructure?")
     await answer(client, ledger, tenant, "Who should be woken for inc-2026-07-11?")
 
@@ -183,7 +201,11 @@ def pending(ledger: Ledger, tenant: Tenant) -> list[Any]:
 
 
 async def act_gate(client: GraphClient, ledger: Ledger, tenant: Tenant) -> None:
-    act("4", "The gate", "Nobody can act without a named human, and the approval is bound to the bytes.")
+    act(
+        "4",
+        "The gate",
+        "Nobody can act without a named human, and the approval is bound to the bytes.",
+    )
     adapter = MockAdapter()
 
     # A re-run must not inherit the previous run's approvals, or the demo would
@@ -194,7 +216,9 @@ async def act_gate(client: GraphClient, ledger: Ledger, tenant: Tenant) -> None:
 
     async def file_review(service: str) -> Any:
         return await W.request_action(
-            client, ledger, tenant,
+            client,
+            ledger,
+            tenant,
             action="flag_for_review",
             service=service,
             title=f"Ownership review: {service}",
@@ -206,8 +230,10 @@ async def act_gate(client: GraphClient, ledger: Ledger, tenant: Tenant) -> None:
     asked = await file_review("merchant-dashboard")
     show(asked)
     approval = pending(ledger, tenant)[0]
-    console.print(f"    [dim]status {approval.status} · payload "
-                  f"{approval.payload_hash[:16]}… · by {approval.requested_by}[/dim]\n")
+    console.print(
+        f"    [dim]status {approval.status} · payload "
+        f"{approval.payload_hash[:16]}… · by {approval.requested_by}[/dim]\n"
+    )
 
     console.print("  [bold]·[/bold] before anyone approves, try to run it anyway")
     early = await W.execute_action(ledger, approval.id, payload=approval.payload, adapter=adapter)
@@ -215,8 +241,13 @@ async def act_gate(client: GraphClient, ledger: Ledger, tenant: Tenant) -> None:
     console.print()
 
     console.print("  [bold]·[/bold] a named human approves")
-    decided = W.decide_action(ledger, approval.id, approve=True, decided_by="ops-lead",
-                              note="reviewed the ownership record")
+    decided = W.decide_action(
+        ledger,
+        approval.id,
+        approve=True,
+        decided_by="ops-lead",
+        note="reviewed the ownership record",
+    )
     show(decided)
     console.print()
 
@@ -233,8 +264,10 @@ async def act_gate(client: GraphClient, ledger: Ledger, tenant: Tenant) -> None:
     tampered["title"] = str(tampered["title"]) + "!"
     blocked = await W.execute_action(ledger, other.id, payload=tampered, adapter=adapter)
     show(blocked)
-    console.print(f"    [dim]the outside world still received: {reached(adapter)} — "
-                  "the changed payload never left this process[/dim]")
+    console.print(
+        f"    [dim]the outside world still received: {reached(adapter)} — "
+        "the changed payload never left this process[/dim]"
+    )
 
 
 async def demo(settings: Settings) -> int:
@@ -247,18 +280,22 @@ async def demo(settings: Settings) -> int:
         try:
             await client.require(tenant)
         except TenantMissing:
-            console.print(f"[red]Tenant {tenant.name!r} is not loaded.[/red] "
-                          "Run: python -m vouch.seed.load --all")
+            console.print(
+                f"[red]Tenant {tenant.name!r} is not loaded.[/red] "
+                "Run: python -m vouch.seed.load --all"
+            )
             return 1
 
         with Ledger(settings.ledger_path) as ledger:
             console.print()
-            console.print(Panel.fit(
-                f"[bold]Vouch[/bold] — who really owns this?\n"
-                f"[dim]engine {engine.version} · tenant {tenant.name} · "
-                f"actions: {settings.issue_repo and 'github' or 'mock'}[/dim]",
-                border_style="dim",
-            ))
+            console.print(
+                Panel.fit(
+                    f"[bold]Vouch[/bold] — who really owns this?\n"
+                    f"[dim]engine {engine.version} · tenant {tenant.name} · "
+                    f"actions: {settings.issue_repo and 'github' or 'mock'}[/dim]",
+                    border_style="dim",
+                )
+            )
             await act_impact(client, ledger, tenant)
             await act_memory(client, ledger, tenant)
             await act_decisions(client, ledger, tenant)
@@ -317,7 +354,9 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(loader._amain(["--all"] + (["--reset"] if args.reset else [])))
     try:
         if cmd == "ask":
-            return asyncio.run(ask_once(settings, args.question, settings.default_tenant, args.as_of))
+            return asyncio.run(
+                ask_once(settings, args.question, settings.default_tenant, args.as_of)
+            )
         return asyncio.run(demo(settings))
     except EngineUnavailable as exc:
         # The removal test, from the terminal. Every graph-dependent decision fails

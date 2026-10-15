@@ -451,6 +451,7 @@ const MEANING = {
   missing_support: "The graph cannot support an answer to this, so it refused rather than guess.",
   refused: "The graph could not support an answer. A confident guess here is the failure this tool exists to prevent.",
   engine_unavailable: "The graph is unreachable. This is an outage, not an absence — nothing was answered and nothing was guessed.",
+  model_unavailable: "The graph answered but the model could not be reached, so no answer was composed. The graph itself is fine.",
 };
 
 let cy, allNodes = [], allEdges = [], track = "01";
@@ -532,6 +533,7 @@ const STATUS = {
   missing_subject: { icon: "!", tone: "error", word: "refused — subject absent" },
   missing_support: { icon: "!", tone: "error", word: "refused — no support" },
   engine_unavailable: { icon: "!", tone: "error", word: "refused — graph unreachable" },
+  model_unavailable:  { icon: "!", tone: "error", word: "refused — model unreachable" },
 };
 
 function stepHTML(t, open) {
