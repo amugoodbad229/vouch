@@ -335,9 +335,7 @@ class GraphClient:
             if not pending:
                 return time.monotonic() - started
             if time.monotonic() - started > timeout_s:
-                raise TimeoutError(
-                    f"{pending} index(es) still not OPERATIONAL after {timeout_s}s"
-                )
+                raise TimeoutError(f"{pending} index(es) still not OPERATIONAL after {timeout_s}s")
             await asyncio.sleep(0.5)
 
 

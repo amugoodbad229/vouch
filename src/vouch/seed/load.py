@@ -312,9 +312,14 @@ async def load(
 
     live = {(n.label.value, n.key) for n in spec.nodes} - set(INTENDED_DANGLING)
     for (src_label, rel, dst_label), edges in sorted(
-        spec.edges_by_shape().items(), key=lambda kv: (kv[0][0].value, kv[0][1].value, kv[0][2].value)
+        spec.edges_by_shape().items(),
+        key=lambda kv: (kv[0][0].value, kv[0][1].value, kv[0][2].value),
     ):
-        usable = [e for e in edges if (src_label.value, e.src) in live and (dst_label.value, e.dst) in live]
+        usable = [
+            e
+            for e in edges
+            if (src_label.value, e.src) in live and (dst_label.value, e.dst) in live
+        ]
         report.skipped_edges += len(edges) - len(usable)
         if not usable:
             continue

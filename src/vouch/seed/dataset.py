@@ -100,7 +100,10 @@ class TenantSpec:
         return out
 
     def summary(self) -> str:
-        nodes = ", ".join(f"{k.value}={len(v)}" for k, v in sorted(self.nodes_by_label().items(), key=lambda kv: kv[0].value))
+        nodes = ", ".join(
+            f"{k.value}={len(v)}"
+            for k, v in sorted(self.nodes_by_label().items(), key=lambda kv: kv[0].value)
+        )
         return f"tenant {self.name!r}: {len(self.nodes)} nodes ({nodes}), {len(self.edges)} edges"
 
 
@@ -205,7 +208,14 @@ class _Builder:
         **props: Any,
     ) -> None:
         self.edges.append(
-            Edge(src_label, rel, dst_label, src, dst, {k: v for k, v in props.items() if v is not None})
+            Edge(
+                src_label,
+                rel,
+                dst_label,
+                src,
+                dst,
+                {k: v for k, v in props.items() if v is not None},
+            )
         )
 
     def owns(
@@ -258,17 +268,38 @@ _PEOPLE: tuple[tuple[str, str, str, str, date, date | None], ...] = (
     # key, name, team, title, joined, left
     ("priya.raman", "Priya Raman", "payments", "Staff Engineer", date(2023, 2, 6), None),
     ("daniel.okafor", "Daniel Okafor", "payments", "Engineer", date(2024, 9, 2), None),
-    ("nadia.farouk", "Nadia Farouk", "growth", "Engineering Lead", date(2023, 6, 1), date(2026, 3, 15)),
+    (
+        "nadia.farouk",
+        "Nadia Farouk",
+        "growth",
+        "Engineering Lead",
+        date(2023, 6, 1),
+        date(2026, 3, 15),
+    ),
     ("sam.whitfield", "Sam Whitfield", "data-platform", "Engineer", date(2024, 1, 15), None),
     ("mei.lin", "Mei Lin", "checkout", "Engineering Manager", date(2022, 4, 11), None),
     ("tomas.eriksen", "Tomas Eriksen", "billing", "Engineer", date(2023, 10, 3), None),
     ("aisha.bello", "Aisha Bello", "identity", "Security Engineer", date(2022, 8, 22), None),
-    ("jonas.weber", "Jonas Weber", "payments", "Site Reliability Engineer", date(2023, 5, 30), None),
+    (
+        "jonas.weber",
+        "Jonas Weber",
+        "payments",
+        "Site Reliability Engineer",
+        date(2023, 5, 30),
+        None,
+    ),
     ("lena.petrova", "Lena Petrova", "data-platform", "Data Engineer", date(2024, 11, 4), None),
     ("ravi.shankar", "Ravi Shankar", "checkout", "Engineer", date(2023, 7, 17), None),
     ("chloe.dubois", "Chloe Dubois", "billing", "Product Manager", date(2022, 1, 10), None),
     ("omar.haddad", "Omar Haddad", "growth", "Engineer", date(2024, 3, 4), date(2026, 6, 30)),
-    ("grace.nkemdi", "Grace Nkemdi", "data-platform", "Engineering Manager", date(2021, 5, 3), None),
+    (
+        "grace.nkemdi",
+        "Grace Nkemdi",
+        "data-platform",
+        "Engineering Manager",
+        date(2021, 5, 3),
+        None,
+    ),
 )
 
 #: key, name, tier, repo, runtime, criticality
@@ -284,7 +315,14 @@ _SERVICES: tuple[tuple[str, str, str, str, str, int], ...] = (
     (INCIDENT_SERVICE, "Payments API", "core", "acme/payments-api", "go", 5),
     ("identity-api", "Identity API", "core", "acme/identity-api", "go", 4),
     ("inventory-api", "Inventory API", "core", "acme/inventory-api", "go", 3),
-    ("subscriptions-worker", "Subscriptions Worker", "core", "acme/subscriptions-worker", "python", 4),
+    (
+        "subscriptions-worker",
+        "Subscriptions Worker",
+        "core",
+        "acme/subscriptions-worker",
+        "python",
+        4,
+    ),
     ("legacy-soap-bridge", "Legacy SOAP Bridge", "core", "acme/legacy-soap-bridge", "java", 3),
     # -- payments internals
     ("psp-connector", "PSP Connector", "core", "acme/psp-connector", "go", 5),
@@ -523,33 +561,201 @@ _DECISIONS: tuple[tuple[str, str, date, str, tuple[str, ...]], ...] = (
 
 _CHANGES: tuple[tuple[str, str, str, date, str, int], ...] = (
     # key, summary, service, merged_at, author, lines
-    ("chg-4102", "Raise psp-connector pool size", "psp-connector", date(2026, 6, 2), "priya.raman", 84),
-    ("chg-4188", "Add v4 streaming client behind a flag", "psp-connector", date(2026, 6, 21), "daniel.okafor", 512),
-    ("chg-4231", "Switch retry budget to token bucket", "psp-connector", date(2026, 7, 3), "priya.raman", 96),
-    ("chg-4302", "Postmortem follow-up: raise connector ceiling", "psp-connector", date(2026, 7, 15), "priya.raman", 22),
-    ("chg-4409", "Cut payments-api over to v4 by default", INCIDENT_SERVICE, date(2026, 8, 1), "priya.raman", 41),
-    ("chg-4410", "Drop the v3 fallback path", INCIDENT_SERVICE, date(2026, 8, 2), "daniel.okafor", 377),
-    ("chg-4455", "Idempotency keys on settlement calls", INCIDENT_SERVICE, date(2026, 8, 19), "daniel.okafor", 133),
-    ("chg-4501", "Ledger write batching", "ledger-service", date(2026, 8, 27), "tomas.eriksen", 208),
-    ("chg-4550", "Ledger correction entries are append-only", "ledger-service", date(2026, 9, 4), "tomas.eriksen", 62),
-    ("chg-4620", "Orders API: parallelise inventory lookups", "orders-api", date(2026, 9, 11), "ravi.shankar", 145),
-    ("chg-4631", "Orders API: retry payments calls twice", "orders-api", date(2026, 9, 12), "ravi.shankar", 31),
-    ("chg-4701", "Gateway: 5s timeout on orders route", "api-gateway", date(2026, 9, 18), "mei.lin", 12),
-    ("chg-4710", "Checkout: skeleton loaders", "checkout-web", date(2026, 9, 19), "ravi.shankar", 402),
+    (
+        "chg-4102",
+        "Raise psp-connector pool size",
+        "psp-connector",
+        date(2026, 6, 2),
+        "priya.raman",
+        84,
+    ),
+    (
+        "chg-4188",
+        "Add v4 streaming client behind a flag",
+        "psp-connector",
+        date(2026, 6, 21),
+        "daniel.okafor",
+        512,
+    ),
+    (
+        "chg-4231",
+        "Switch retry budget to token bucket",
+        "psp-connector",
+        date(2026, 7, 3),
+        "priya.raman",
+        96,
+    ),
+    (
+        "chg-4302",
+        "Postmortem follow-up: raise connector ceiling",
+        "psp-connector",
+        date(2026, 7, 15),
+        "priya.raman",
+        22,
+    ),
+    (
+        "chg-4409",
+        "Cut payments-api over to v4 by default",
+        INCIDENT_SERVICE,
+        date(2026, 8, 1),
+        "priya.raman",
+        41,
+    ),
+    (
+        "chg-4410",
+        "Drop the v3 fallback path",
+        INCIDENT_SERVICE,
+        date(2026, 8, 2),
+        "daniel.okafor",
+        377,
+    ),
+    (
+        "chg-4455",
+        "Idempotency keys on settlement calls",
+        INCIDENT_SERVICE,
+        date(2026, 8, 19),
+        "daniel.okafor",
+        133,
+    ),
+    (
+        "chg-4501",
+        "Ledger write batching",
+        "ledger-service",
+        date(2026, 8, 27),
+        "tomas.eriksen",
+        208,
+    ),
+    (
+        "chg-4550",
+        "Ledger correction entries are append-only",
+        "ledger-service",
+        date(2026, 9, 4),
+        "tomas.eriksen",
+        62,
+    ),
+    (
+        "chg-4620",
+        "Orders API: parallelise inventory lookups",
+        "orders-api",
+        date(2026, 9, 11),
+        "ravi.shankar",
+        145,
+    ),
+    (
+        "chg-4631",
+        "Orders API: retry payments calls twice",
+        "orders-api",
+        date(2026, 9, 12),
+        "ravi.shankar",
+        31,
+    ),
+    (
+        "chg-4701",
+        "Gateway: 5s timeout on orders route",
+        "api-gateway",
+        date(2026, 9, 18),
+        "mei.lin",
+        12,
+    ),
+    (
+        "chg-4710",
+        "Checkout: skeleton loaders",
+        "checkout-web",
+        date(2026, 9, 19),
+        "ravi.shankar",
+        402,
+    ),
     # The drift evidence: Data Platform has been maintaining the dashboard that
     # the registry still assigns to a person who left.
-    ("chg-4720", "Merchant Dashboard: upgrade to React 19", FAR_SERVICE, date(2026, 8, 14), "sam.whitfield", 611),
-    ("chg-4731", "Merchant Dashboard: fix export timezone bug", FAR_SERVICE, date(2026, 9, 2), "sam.whitfield", 47),
-    ("chg-4742", "Merchant Dashboard: point exports at warehouse", FAR_SERVICE, date(2026, 9, 22), "lena.petrova", 158),
-    ("chg-4750", "Merchant Dashboard: delete unused Growth experiment flag", FAR_SERVICE, date(2026, 10, 3), "sam.whitfield", 29),
-    ("chg-4760", "Partner portal: deprecation banner", "partner-portal", date(2026, 9, 25), "mei.lin", 76),
-    ("chg-4770", "SOAP bridge: log deprecation warnings", "legacy-soap-bridge", date(2026, 9, 28), "mei.lin", 33),
-    ("chg-4780", "Status page: no changes this quarter", ORPHAN_SERVICE, date(2026, 7, 1), "ravi.shankar", 4),
-    ("chg-4790", "Identity: rotate signing keys", "identity-api", date(2026, 9, 30), "aisha.bello", 55),
-    ("chg-4800", "Secrets broker: tighten token TTL", "secrets-broker", date(2026, 10, 1), "aisha.bello", 18),
-    ("chg-4810", "Event bus: bump consumer lag alert", "event-bus", date(2026, 10, 2), "jonas.weber", 9),
+    (
+        "chg-4720",
+        "Merchant Dashboard: upgrade to React 19",
+        FAR_SERVICE,
+        date(2026, 8, 14),
+        "sam.whitfield",
+        611,
+    ),
+    (
+        "chg-4731",
+        "Merchant Dashboard: fix export timezone bug",
+        FAR_SERVICE,
+        date(2026, 9, 2),
+        "sam.whitfield",
+        47,
+    ),
+    (
+        "chg-4742",
+        "Merchant Dashboard: point exports at warehouse",
+        FAR_SERVICE,
+        date(2026, 9, 22),
+        "lena.petrova",
+        158,
+    ),
+    (
+        "chg-4750",
+        "Merchant Dashboard: delete unused Growth experiment flag",
+        FAR_SERVICE,
+        date(2026, 10, 3),
+        "sam.whitfield",
+        29,
+    ),
+    (
+        "chg-4760",
+        "Partner portal: deprecation banner",
+        "partner-portal",
+        date(2026, 9, 25),
+        "mei.lin",
+        76,
+    ),
+    (
+        "chg-4770",
+        "SOAP bridge: log deprecation warnings",
+        "legacy-soap-bridge",
+        date(2026, 9, 28),
+        "mei.lin",
+        33,
+    ),
+    (
+        "chg-4780",
+        "Status page: no changes this quarter",
+        ORPHAN_SERVICE,
+        date(2026, 7, 1),
+        "ravi.shankar",
+        4,
+    ),
+    (
+        "chg-4790",
+        "Identity: rotate signing keys",
+        "identity-api",
+        date(2026, 9, 30),
+        "aisha.bello",
+        55,
+    ),
+    (
+        "chg-4800",
+        "Secrets broker: tighten token TTL",
+        "secrets-broker",
+        date(2026, 10, 1),
+        "aisha.bello",
+        18,
+    ),
+    (
+        "chg-4810",
+        "Event bus: bump consumer lag alert",
+        "event-bus",
+        date(2026, 10, 2),
+        "jonas.weber",
+        9,
+    ),
     ("chg-4820", "FX: pin rate source", "currency-fx", date(2026, 10, 6), "chloe.dubois", 27),
-    ("chg-4830", "Recon: shard by merchant id", "nightly-recon", date(2026, 10, 8), "lena.petrova", 189),
+    (
+        "chg-4830",
+        "Recon: shard by merchant id",
+        "nightly-recon",
+        date(2026, 10, 8),
+        "lena.petrova",
+        189,
+    ),
 )
 
 _INCIDENTS: tuple[tuple[str, str, str, date, date, str, tuple[str, ...]], ...] = (
@@ -679,9 +885,21 @@ _EPISODES: tuple[tuple[str, str, str, date], ...] = (
 )
 
 _PROCEDURES: tuple[tuple[str, str, str], ...] = (
-    ("proc-payments-oncall", "Payments on-call triage", "1. Check psp-connector error rate. 2. Check PSP status page. 3. If rate-limited, page Payments Core."),
-    ("proc-ledger-reconcile", "Ledger reconciliation", "1. Freeze writes. 2. Diff ledger against PSP settlement file. 3. Post correction entries."),
-    ("proc-events-failover", "Event bus failover", "1. Page platform rotation. 2. Drain consumer groups. 3. Flip primary."),
+    (
+        "proc-payments-oncall",
+        "Payments on-call triage",
+        "1. Check psp-connector error rate. 2. Check PSP status page. 3. If rate-limited, page Payments Core.",
+    ),
+    (
+        "proc-ledger-reconcile",
+        "Ledger reconciliation",
+        "1. Freeze writes. 2. Diff ledger against PSP settlement file. 3. Post correction entries.",
+    ),
+    (
+        "proc-events-failover",
+        "Event bus failover",
+        "1. Page platform rotation. 2. Drain consumer groups. 3. Flip primary.",
+    ),
 )
 
 _HANDOFFS: tuple[tuple[str, str, str, datetime, int, str], ...] = (
@@ -828,7 +1046,9 @@ def beta() -> TenantSpec:
 
     b.node(Label.TEAM, "beta-payments", name="Beta Payments", slack="#beta-payments")
     b.node(Label.TEAM, "beta-platform", name="Beta Platform", slack="#beta-platform")
-    b.node(Label.PERSON, "yuki.tanaka", name="Yuki Tanaka", title="Engineer", joined_at="2025-03-10")
+    b.node(
+        Label.PERSON, "yuki.tanaka", name="Yuki Tanaka", title="Engineer", joined_at="2025-03-10"
+    )
 
     b.edge(Label.PERSON, Rel.MEMBER_OF, Label.TEAM, "yuki.tanaka", "beta-payments")
 
@@ -837,7 +1057,15 @@ def beta() -> TenantSpec:
         ("beta-checkout", "Beta Checkout", "edge", "beta/checkout", "node", 3),
         ("beta-ledger", "Beta Ledger", "core", "beta/ledger", "rust", 4),
     ):
-        b.node(Label.SERVICE, key, name=name, tier=tier, repo=repo, runtime=runtime, criticality=criticality)
+        b.node(
+            Label.SERVICE,
+            key,
+            name=name,
+            tier=tier,
+            repo=repo,
+            runtime=runtime,
+            criticality=criticality,
+        )
 
     b.edge(Label.SERVICE, Rel.CALLS, Label.SERVICE, "beta-checkout", INCIDENT_SERVICE)
     b.edge(Label.SERVICE, Rel.CALLS, Label.SERVICE, INCIDENT_SERVICE, "beta-ledger")
