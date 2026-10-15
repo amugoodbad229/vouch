@@ -226,6 +226,26 @@ uv run vouch serve     # the API and the one page, on :8000
 `demo` runs the whole product without a network. It is the fastest way to see the
 three answer shapes and the gate in one sitting.
 
+## Tracks
+
+Entered in **all three**, from one graph and one build. Each track is a different
+question against the same evidence, and each is demonstrated by a `demo` act.
+
+**01 — Agents That Act on Connected Data.** Traversal at depth. `payments-api`
+has two direct callers; at four hops it picks up a service nobody would page. The
+answer carries its hops, and the action that follows does not run until a human
+approves a specific payload — which is void the moment the payload changes.
+
+**02 — Agent Memory and Coordination.** Nothing is deleted. Ownership moved
+`billing` → `payments` on 2026-04-01, so the same question asked `as_of`
+2026-03-15 and `as_of` today returns two different truths from one store; a
+superseded claim stays queryable and its replacement contradicts it by an edge.
+Tenants are separate graphs, and a cross-tenant read returns nothing to read.
+
+**03 — Company Brain.** The decision record. Which decisions still have current
+grounds and which have none, where a person who left months ago is still the
+declared owner, and which service nobody owns at all.
+
 ## Layout
 
 ```
@@ -238,7 +258,7 @@ src/vouch/api/             FastAPI: /api/ask, /api/graph, /api/approvals
 src/vouch/seed/            synthetic Acme Cloud, written backwards from the refusals
 web/                       one page, three tabs, Cytoscape graph
 evals/                     the case list and the runner
-tests/                     86 tests; the pure ones run without a database
+tests/                     91 tests; the pure ones run without a database
 ```
 
 Pinned to FalkorDB **v4.22.0**. Not a floating tag: the same graph on two releases
