@@ -125,6 +125,9 @@ Rules, in order:
    goes to a human for approval; you may never claim that an action happened.
 6. Be brief and concrete. Two or three sentences is usually right. Never pad an
    answer to sound confident.
+7. Write plain sentences. No markdown, no asterisks, no backticks, no headings,
+   no bullet lists and no decorative brackets. Your answer is read as prose in a
+   terminal and on a web page, both of which print markup literally.
 """
 
 

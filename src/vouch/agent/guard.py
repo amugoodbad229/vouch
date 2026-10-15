@@ -202,6 +202,26 @@ def vocabulary(universe: frozenset[str]) -> frozenset[str]:
     return frozenset(part for key in universe for part in key.split("-"))
 
 
+def read_text(results: Iterable[ToolResult]) -> str:
+    """Everything the agent read, flattened into one searchable string.
+
+    This exists because a key can be legitimately grounded without being an
+    evidence row. A claim's statement *names* the service it is about, and a
+    recorded contradiction names both claims; the agent read those words and is
+    entitled to repeat them. Without this the guard refuses a correct answer for
+    naming something it had in front of it, which is the failure mode that makes
+    people turn a guard off.
+    """
+    parts: list[str] = []
+    for res in results:
+        parts.extend(ev.cite() for ev in res.evidence)
+        parts.extend(res.conflicts)
+        parts.extend(res.missing_information)
+        for value in res.data.values():
+            parts.extend(_strings(value))
+    return normalise(" \n ".join(parts))
+
+
 def check(
     text: str,
     results: Sequence[ToolResult],
@@ -215,7 +235,10 @@ def check(
     the graph at all is a heuristic, because "this token is a claim about an
     entity" is not decidable from shape -- see `vocabulary`.
     """
-    allowed = set(opened_keys(results))
+    # Two ways to be grounded: the key came back as evidence, or it appeared as a
+    # token in something the tool returned. The second is not a loophole -- the
+    # token has to be literally present in text the agent was handed.
+    allowed = set(opened_keys(results)) | (mentioned(read_text(results)) & universe)
     named = mentioned(text)
     vocab = vocabulary(universe)
     unopened = sorted(n for n in named if n in universe and n not in allowed)
