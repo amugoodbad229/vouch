@@ -6,13 +6,13 @@ agree on the shape of an answer without importing each other.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from vouch.tools.contract import ToolResult
-
     from evals.expectations import Ground
+    from vouch.tools.contract import ToolResult
 
 # The four answer classes, plus the ways an answer can fail to be one of them.
 ANSWERED = "answered"
@@ -94,6 +94,10 @@ class Answer:
     expect_classes: tuple[str, ...] = ()
     text: str = ""
     stated_class: str | None = None
+    #: For condition C: the badge the citation guard put on the delivered text.  It is
+    #: recorded separately because ``enforce()`` badges every refusal ``missing_support``,
+    #: which collapses two of the four classes at the surface.
+    guard_outcome: str | None = None
     cited: tuple[str, ...] = ()
     opened: tuple[str, ...] = ()
     citation_valid: bool | None = None

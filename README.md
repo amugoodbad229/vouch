@@ -226,6 +226,9 @@ uv run vouch serve     # the API and the one page, on :8000
 `demo` runs the whole product without a network. It is the fastest way to see the
 three answer shapes and the gate in one sitting.
 
+[`DEMO.md`](DEMO.md) is the shot-by-shot recording script, including the removal
+test.
+
 ## Tracks
 
 Entered in **all three**, from one graph and one build. Each track is a different
